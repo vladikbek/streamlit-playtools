@@ -1,4 +1,4 @@
-# TopSongsFinder
+# vbrtools
 
 A Streamlit application that helps users discover and analyze music through various search options including tracks, playlists, and record labels.
 
@@ -13,8 +13,8 @@ A Streamlit application that helps users discover and analyze music through vari
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/TopSongsFinder.git
-cd TopSongsFinder
+git clone https://github.com/vladikbek/vbrtools.git
+cd vbrtools
 ```
 
 2. Create and activate a virtual environment:
@@ -45,4 +45,4 @@ The application will open in your default web browser.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
