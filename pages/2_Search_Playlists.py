@@ -69,30 +69,16 @@ def get_playlist_details_batch(sp: spotipy.Spotify, playlists: List[Dict], batch
 def process_playlist_batch(sp: spotipy.Spotify, batch: List[Dict]) -> List[Dict]:
     """Process a single batch of playlists"""
     processed_batch = []
-    try:
-        # Get all playlist IDs in this batch
-        playlist_ids = [p['id'] for p in batch]
-        
-        # Get details for all playlists in batch with a single API call
-        details = sp.playlists(playlist_ids)
-        
-        # Match details with playlists
-        for playlist, detail in zip(batch, details['playlists']):
-            if detail:  # Check if we got details successfully
-                playlist['followers'] = detail['followers']['total']
-                playlist['total_tracks'] = detail['tracks']['total']
-                processed_batch.append(playlist)
-            
-    except Exception as e:
-        # If batch request fails, try individual requests as fallback
-        for playlist in batch:
-            try:
-                details = sp.playlist(playlist['id'], fields='followers,tracks(total)')
-                playlist['followers'] = details['followers']['total']
-                playlist['total_tracks'] = details['tracks']['total']
-                processed_batch.append(playlist)
-            except:
-                continue
+    
+    # Process each playlist in the batch
+    for playlist in batch:
+        try:
+            details = sp.playlist(playlist['id'], fields='followers,tracks(total)')
+            playlist['followers'] = details['followers']['total']
+            playlist['total_tracks'] = details['tracks']['total']
+            processed_batch.append(playlist)
+        except Exception as e:
+            continue  # Skip playlists that fail to load
     
     return processed_batch
 
