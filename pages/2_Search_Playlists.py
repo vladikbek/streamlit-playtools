@@ -286,7 +286,7 @@ if search_button and keyword:
             st.error("No playlists found. Try using different keywords.")
         st.stop()
 
-    # Convert to pandas DataFrame with market positions
+    # Convert to pandas DataFrame
     df = pd.DataFrame([{
         'cover_url': p['images'][0]['url'] if p.get('images') and len(p['images']) > 0 else '',
         'Name': p['name'],
@@ -298,7 +298,8 @@ if search_button and keyword:
         'Keyword': p['source_keyword'],
         'Description': p.get('description', ''),
         'URL': f"spotify:playlist:{p['id']}",
-        'Stats': f"https://www.isitagoodplaylist.com/playlist/{p['id']}"
+        'Stats': f"https://www.isitagoodplaylist.com/playlist/{p['id']}",
+        'Check': f"/Check_Playlist?playlist={p['id']}"  # Add new Check URL
     } for p in unique_playlists])
 
     # Display results
@@ -326,6 +327,11 @@ if search_button and keyword:
             "Stats",
             display_text="📊 Stats",
             help="View detailed playlist statistics"
+        ),
+        "Check": st.column_config.LinkColumn(  # Add new Check column
+            "Check",
+            display_text="🔍 Check",
+            help="Analyze playlist tracks"
         ),
         "Followers": st.column_config.NumberColumn(
             "Followers",
