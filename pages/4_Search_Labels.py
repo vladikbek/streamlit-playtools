@@ -61,10 +61,14 @@ def process_tracks_batch(args):
             images = track.get('album', {}).get('images', [])
             artwork_url = images[-1]['url'] if images else ''
             
+            # Get ISRC from external_ids
+            isrc = track.get('external_ids', {}).get('isrc', 'N/A')
+            
             track_data = {
                 'artwork_url': artwork_url,
                 'name': track.get('name', 'Unknown Track'),
                 'artists': artists,
+                'isrc': isrc,
                 'popularity': track.get('popularity', 0),
                 'release_date': track.get('album', {}).get('release_date', ''),
                 'url': track.get('uri', '')
@@ -102,6 +106,13 @@ show_current_year = st.sidebar.checkbox(
     "Show Current Year Only",
     value=False,
     help=f"Show only tracks released in {datetime.now().year}"
+)
+
+# Add ISRC filter
+isrc_filter = st.sidebar.text_input(
+    "Filter by ISRC",
+    value="",
+    help="Enter one or more ISRCs (comma-separated). Will match any track containing the entered text."
 )
 
 min_popularity = st.sidebar.slider(
@@ -179,6 +190,15 @@ if search_button and search_label:
                 lambda x: f"{x}-01-01" if len(x) == 4 else (f"{x}-01" if len(x) == 7 else x)
             ))
             df = df[df['release_date'] >= pd.Timestamp(min_release_date)]
+            
+        # Apply ISRC filter if provided
+        if isrc_filter:
+            # Split by comma and strip whitespace
+            isrc_list = [isrc.strip().upper() for isrc in isrc_filter.split(',') if isrc.strip()]
+            if isrc_list:
+                # Create a mask that matches if any of the ISRC patterns are found
+                isrc_mask = df['isrc'].str.contains('|'.join(isrc_list), case=False, na=False)
+                df = df[isrc_mask]
         
         # Sort by popularity
         df = df.sort_values('popularity', ascending=False)
@@ -203,10 +223,15 @@ if search_button and search_label:
                 width="medium"
             ),
             "popularity": st.column_config.NumberColumn("Popularity", format="%d"),
+            "isrc": st.column_config.TextColumn(
+                "ISRC",
+                help="International Standard Recording Code",
+                width="small"
+            ),
             "release_date": st.column_config.DateColumn("Release Date"),
             "url": st.column_config.LinkColumn(
-                "Open in Spotify",
-                display_text="Open in App",
+                "▶️ Play",
+                display_text="Play",
                 help="Click to open in Spotify desktop/mobile app"
             )
         }
