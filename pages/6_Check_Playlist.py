@@ -229,9 +229,28 @@ if playlist_to_process:
             # Convert to DataFrame
             df = pd.DataFrame(tracks)
             
-            # Convert date columns to datetime
-            df['date_added'] = pd.to_datetime(df['date_added'])
-            df['release_date'] = pd.to_datetime(df['release_date'])
+            # Convert date columns to datetime with better error handling
+            # Handle date_added column
+            df['date_added'] = pd.to_datetime(df['date_added'], utc=True)
+            
+            # Handle release_date column with various formats
+            def parse_release_date(date_str):
+                if pd.isna(date_str):
+                    return pd.NaT
+                try:
+                    # Handle year-only format
+                    if len(str(date_str)) == 4:
+                        return pd.to_datetime(f"{date_str}-01-01")
+                    # Handle year-month format
+                    elif len(str(date_str)) == 7:
+                        return pd.to_datetime(f"{date_str}-01")
+                    # Handle full date format
+                    else:
+                        return pd.to_datetime(date_str)
+                except:
+                    return pd.NaT
+
+            df['release_date'] = df['release_date'].apply(parse_release_date)
             
             # Configure columns for display
             column_config = {
@@ -253,10 +272,12 @@ if playlist_to_process:
                 "label": st.column_config.TextColumn(
                     "Label",
                     help="Record label that released the track",
+                    width="medium"
                 ),
                 "genres": st.column_config.ListColumn(
                     "Genres",
-                    help="Artist genres"
+                    help="Artist genres",
+                    width="medium"
                 ),
                 "popularity": st.column_config.NumberColumn(
                     "Popularity",
@@ -270,7 +291,8 @@ if playlist_to_process:
                 ),
                 "release_date": st.column_config.DateColumn(
                     "Release Date",
-                    help="Track's release date"
+                    help="Track's release date",
+                    format="D MMM YYYY"
                 ),
                 "url": st.column_config.LinkColumn(
                     "Play",
