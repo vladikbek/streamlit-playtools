@@ -67,18 +67,37 @@ def get_playlist_details_batch(sp: spotipy.Spotify, playlists: List[Dict], batch
     return processed_playlists
 
 def process_playlist_batch(sp: spotipy.Spotify, batch: List[Dict]) -> List[Dict]:
-    """Process a single batch of playlists"""
+    """Process a single batch of playlists in parallel"""
     processed_batch = []
     
-    # Process each playlist in the batch
-    for playlist in batch:
+    def fetch_playlist_details(playlist_with_index: Tuple[int, Dict]) -> Tuple[int, Dict]:
+        """Fetch details for a single playlist while preserving order"""
+        index, playlist = playlist_with_index
         try:
             details = sp.playlist(playlist['id'], fields='followers,tracks(total)')
             playlist['followers'] = details['followers']['total']
             playlist['total_tracks'] = details['tracks']['total']
-            processed_batch.append(playlist)
+            return index, playlist
         except Exception as e:
-            continue  # Skip playlists that fail to load
+            return index, None
+
+    # Create list of (index, playlist) tuples to preserve order
+    indexed_playlists = list(enumerate(batch))
+    
+    # Process playlists in parallel within the batch
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(batch), MAX_WORKERS)) as executor:
+        futures = [executor.submit(fetch_playlist_details, item) for item in indexed_playlists]
+        
+        # Collect results and maintain original order
+        results = []
+        for future in concurrent.futures.as_completed(futures):
+            index, playlist = future.result()
+            if playlist:
+                results.append((index, playlist))
+    
+    # Sort by original index and extract just the playlists
+    results.sort(key=lambda x: x[0])
+    processed_batch = [playlist for _, playlist in results]
     
     return processed_batch
 
@@ -157,13 +176,6 @@ hide_spotify_playlists = st.sidebar.checkbox(
     "Hide Spotify's playlists",
     value=False,
     help="Hide playlists owned by Spotify"
-)
-
-# Add option to hide playlist networks
-hide_playlist_networks = st.sidebar.checkbox(
-    "Hide playlist networks",
-    value=False,
-    help="Hide playlists from accounts that have multiple playlists in results"
 )
 
 results_limit = st.sidebar.slider(
@@ -256,12 +268,7 @@ if search_button and keyword:
         
         for playlist, _ in cross_market_playlists:
             playlist_id = playlist['id']
-            owner_id = playlist['owner']['id']
             
-            # Skip if this is from a playlist network and we're hiding them
-            if hide_playlist_networks and owner_counts[owner_id] > 1:
-                continue
-                
             if playlist_id not in seen_ids:
                 seen_ids.add(playlist_id)
                 unique_playlists.append(playlist)
@@ -290,7 +297,8 @@ if search_button and keyword:
         'Avg Position': sum(pl['market_position'] for pl in processed_playlists if pl['id'] == p['id']) / len(playlist_market_positions[p['id']]['markets']),
         'Keyword': p['source_keyword'],
         'Description': p.get('description', ''),
-        'URL': f"spotify:playlist:{p['id']}"
+        'URL': f"spotify:playlist:{p['id']}",
+        'Stats': f"https://www.isitagoodplaylist.com/playlist/{p['id']}"
     } for p in unique_playlists])
 
     # Display results
@@ -310,9 +318,14 @@ if search_button and keyword:
             width="small"
         ),
         "URL": st.column_config.LinkColumn(
-            "Open in Spotify",
-            display_text="Open in App",
+            "Open",
+            display_text="🔗 Open",
             help="Click to open in Spotify desktop/mobile app"
+        ),
+        "Stats": st.column_config.LinkColumn(
+            "Stats",
+            display_text="📊 Stats",
+            help="View detailed playlist statistics"
         ),
         "Followers": st.column_config.NumberColumn(
             "Followers",
@@ -349,6 +362,39 @@ if search_button and keyword:
     
     # Create an expander for analytics
     with st.expander("View Analytics", expanded=False):
+        # Total followers
+        total_followers = df['Followers'].sum()
+        st.metric("Total Followers", f"{total_followers:,}")
+        
+        # Keyword presence analysis
+        def categorize_keyword_presence(row, keyword):
+            title = row['Name'].lower()
+            description = row['Description'].lower() if pd.notna(row['Description']) else ''
+            keyword = keyword.lower()
+            
+            if keyword in title:
+                return 'Keyword in Title'
+            elif keyword in description:
+                return 'Keyword only in Description'
+            else:
+                return 'No Keyword Match'
+        
+        # Get the first keyword (assuming it's the main search term)
+        main_keyword = keywords[0] if keywords else ''
+        
+        # Categorize playlists
+        df['keyword_presence'] = df.apply(lambda x: categorize_keyword_presence(x, main_keyword), axis=1)
+        keyword_presence_counts = df['keyword_presence'].value_counts()
+        
+        # Create pie chart for keyword presence
+        fig_keyword = px.pie(
+            values=keyword_presence_counts.values,
+            names=keyword_presence_counts.index,
+            title=f"Keyword '{main_keyword}' Presence Analysis"
+        )
+        fig_keyword.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_keyword, use_container_width=True)
+        
         # Top playlist owners
         owner_counts = df['Owner'].value_counts().head(10)
         fig_owners = px.bar(
@@ -359,27 +405,57 @@ if search_button and keyword:
         )
         st.plotly_chart(fig_owners, use_container_width=True)
         
-        # Keyword analysis from playlist titles
-        # Split titles into words and clean them
-        words = []
+        # Enhanced keyword analysis from playlist titles
+        def extract_phrases(text):
+            """Extract meaningful phrases from text"""
+            # Basic stopwords that shouldn't be at the start/end of phrases
+            stopwords = {'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+            
+            # Clean and normalize text
+            text = ''.join(c.lower() if c.isalnum() or c.isspace() else ' ' for c in text)
+            text = ' '.join(text.split())  # Normalize spaces
+            
+            words = text.split()
+            phrases = []
+            
+            # Single words (keeping 2+ letter words)
+            phrases.extend([w for w in words if len(w) >= 2 and w not in stopwords])
+            
+            # Look for consecutive words that appear together frequently
+            for i in range(len(words) - 1):
+                if words[i] not in stopwords:  # Don't start phrase with stopword
+                    phrase = words[i]
+                    for j in range(i + 1, min(i + 4, len(words))):  # Look up to 3 words ahead
+                        if words[j] not in stopwords or j == len(words) - 1:  # Allow stopwords in middle
+                            phrase = f"{phrase} {words[j]}"
+                            phrases.append(phrase)
+            
+            return phrases
+        
+        # Collect phrases from all titles
+        all_phrases = []
         for title in df['Name']:
-            # Convert to lowercase and split
-            title_words = title.lower().split()
-            # Filter out common words and short words
-            filtered_words = [word for word in title_words 
-                            if len(word) > 2 and 
-                            not word.isnumeric() and
-                            word not in {'the', 'and', 'for', 'with', 'feat', 'mix', 'top', 'new', 'best'}]
-            words.extend(filtered_words)
+            all_phrases.extend(extract_phrases(title))
         
-        # Count word frequencies
-        word_counts = Counter(words).most_common(15)  # Get top 15 words
+        # Count and filter phrases
+        phrase_counts = Counter(all_phrases)
         
-        if word_counts:  # Only show if we found any words
-            fig_words = px.bar(
-                x=[word for word, _ in word_counts],
-                y=[count for _, count in word_counts],
-                title="Most Common Words in Playlist Titles",
-                labels={'x': 'Word', 'y': 'Frequency'}
+        # Filter meaningful phrases (appear more than once or are multi-word)
+        meaningful_phrases = {
+            phrase: count for phrase, count in phrase_counts.items()
+            if count > 1 or ' ' in phrase  # Keep if multiple occurrences or multi-word
+        }
+        
+        # Get top phrases
+        top_phrases = sorted(meaningful_phrases.items(), key=lambda x: x[1], reverse=True)[:20]
+        
+        # Create visualization
+        if top_phrases:
+            fig_phrases = px.bar(
+                x=[phrase for phrase, _ in top_phrases],
+                y=[count for _, count in top_phrases],
+                title="Most Common Phrases in Playlist Titles",
+                labels={'x': 'Phrase', 'y': 'Frequency'}
             )
-            st.plotly_chart(fig_words, use_container_width=True) 
+            fig_phrases.update_layout(xaxis_tickangle=45)
+            st.plotly_chart(fig_phrases, use_container_width=True) 
