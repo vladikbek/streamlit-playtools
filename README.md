@@ -1,4 +1,4 @@
-# vbrtools
+# VBR Tools
 
 A Streamlit application that helps users discover and analyze music through various search options including tracks, playlists, and record labels.
 
