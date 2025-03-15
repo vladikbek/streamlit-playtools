@@ -83,8 +83,27 @@ st.write("Analyze your playlist's search position across different markets and k
 # Initialize Spotify client
 sp = setup_spotify()
 
+# Get query parameters from URL
+playlists_param = st.query_params.get("playlists", "")
+keywords_param = st.query_params.get("keywords", "")
+markets_param = st.query_params.get("markets", "")
+
+# Parse markets from URL parameter if provided
+markets_from_url = []
+if markets_param:
+    markets_from_url = [m.strip() for m in markets_param.split(',') if m.strip() in AVAILABLE_MARKETS]
+
 # Sidebar for configuration
 st.sidebar.title("Settings")
+
+# Market selection
+selected_markets = st.sidebar.multiselect(
+    "Markets",
+    options=list(AVAILABLE_MARKETS.keys()),
+    default=markets_from_url,
+    format_func=lambda x: f"{x} - {AVAILABLE_MARKETS[x]}",
+    help="Select markets to search playlists in (leave empty to search all markets)"
+)
 
 # Results limit
 results_limit = st.sidebar.slider(
@@ -102,14 +121,30 @@ col1, col2 = st.columns([1, 1])
 with col1:
     playlist_url = st.text_input(
         "Enter Spotify playlist URLs/URIs (separate by comma):",
+        value=playlists_param,
         placeholder="spotify:playlist:xxx, https://open.spotify.com/playlist/yyy"
     )
 
 with col2:
     keywords = st.text_input(
         "Enter keywords to analyze (separate by comma):",
+        value=keywords_param,
         placeholder="edm playlist, electronic music, dance hits"
     )
+
+# Update URL parameters when input values change
+if playlist_url != playlists_param or keywords != keywords_param or ','.join(selected_markets) != markets_param:
+    # Only update if there are actual values to avoid cluttering the URL
+    query_params = {}
+    if playlist_url:
+        query_params["playlists"] = playlist_url
+    if keywords:
+        query_params["keywords"] = keywords
+    if selected_markets:
+        query_params["markets"] = ','.join(selected_markets)
+    
+    # Update the URL parameters
+    st.query_params.update(query_params)
 
 search_button = st.button("Analyze SEO Position", type="primary", use_container_width=True)
 
@@ -143,8 +178,11 @@ if search_button and playlist_url and keywords:
         st.error("Please enter at least one keyword.")
         st.stop()
     
+    # Use selected markets or all markets if none selected
+    markets_to_search = selected_markets if selected_markets else list(AVAILABLE_MARKETS.keys())
+    
     # Create progress bar
-    total_searches = len(keyword_list) * len(AVAILABLE_MARKETS) * len(playlist_ids)
+    total_searches = len(keyword_list) * len(markets_to_search) * len(playlist_ids)
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -153,7 +191,7 @@ if search_button and playlist_url and keywords:
         (sp, keyword, market, playlist_id, results_limit)
         for playlist_id in playlist_ids
         for keyword in keyword_list
-        for market in AVAILABLE_MARKETS.keys()
+        for market in markets_to_search
     ]
     
     results = []
