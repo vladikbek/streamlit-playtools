@@ -76,15 +76,86 @@ def search_playlist_parallel(args: Tuple[spotipy.Spotify, str, str, str, int]) -
     sp, keyword, market, target_playlist_id, limit = args
     return search_playlists(sp, keyword, market, target_playlist_id, limit)
 
-def perform_search(sp, playlist_url, keywords, selected_markets, results_limit):
-    """Perform the search operation with the given parameters"""
+st.set_page_config(page_title="Playlist SEO Analysis - Top Songs Finder", page_icon="🎯", layout="wide")
+st.title("🎯 Playlist SEO Analysis")
+st.write("Analyze your playlist's search position across different markets and keywords!")
+
+# Initialize Spotify client
+sp = setup_spotify()
+
+# Get query parameters from URL
+playlists_param = st.query_params.get("playlists", "")
+keywords_param = st.query_params.get("keywords", "")
+markets_param = st.query_params.get("markets", "")
+
+# Parse markets from URL parameter if provided
+markets_from_url = []
+if markets_param:
+    markets_from_url = [m.strip() for m in markets_param.split(',') if m.strip() in AVAILABLE_MARKETS]
+
+# Sidebar for configuration
+st.sidebar.title("Settings")
+
+# Market selection
+selected_markets = st.sidebar.multiselect(
+    "Markets",
+    options=list(AVAILABLE_MARKETS.keys()),
+    default=markets_from_url,
+    format_func=lambda x: f"{x} - {AVAILABLE_MARKETS[x]}",
+    help="Select markets to search playlists in (leave empty to search all markets)"
+)
+
+# Results limit
+results_limit = st.sidebar.slider(
+    "Search depth per keyword",
+    min_value=50,
+    max_value=1000,
+    value=200,
+    step=50,
+    help="How deep to search in results (max 1000)"
+)
+
+# Create input fields
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    playlist_url = st.text_input(
+        "Enter Spotify playlist URLs/URIs (separate by comma):",
+        value=playlists_param,
+        placeholder="spotify:playlist:xxx, https://open.spotify.com/playlist/yyy"
+    )
+
+with col2:
+    keywords = st.text_input(
+        "Enter keywords to analyze (separate by comma):",
+        value=keywords_param,
+        placeholder="edm playlist, electronic music, dance hits"
+    )
+
+# Update URL parameters when input values change
+if playlist_url != playlists_param or keywords != keywords_param or ','.join(selected_markets) != markets_param:
+    # Only update if there are actual values to avoid cluttering the URL
+    query_params = {}
+    if playlist_url:
+        query_params["playlists"] = playlist_url
+    if keywords:
+        query_params["keywords"] = keywords
+    if selected_markets:
+        query_params["markets"] = ','.join(selected_markets)
+    
+    # Update the URL parameters
+    st.query_params.update(query_params)
+
+search_button = st.button("Analyze SEO Position", type="primary", use_container_width=True)
+
+if search_button and playlist_url and keywords:
     # Extract playlist IDs
     playlist_urls = [url.strip() for url in playlist_url.split(',') if url.strip()]
     playlist_ids = [extract_playlist_id(url) for url in playlist_urls]
     
     if not playlist_ids:
         st.error("Please enter at least one valid playlist URL/URI.")
-        return None
+        st.stop()
     
     # Validate playlist IDs and get their names
     playlist_infos = []
@@ -94,7 +165,7 @@ def perform_search(sp, playlist_url, keywords, selected_markets, results_limit):
             playlist_infos.append({'id': playlist_id, 'name': playlist_info['name']})
         except Exception as e:
             st.error(f"Invalid playlist URL/URI: {playlist_id}. Please check and try again.")
-            return None
+            st.stop()
     
     # Show playlists being analyzed
     playlists_names = ", ".join([info['name'] for info in playlist_infos])
@@ -105,7 +176,7 @@ def perform_search(sp, playlist_url, keywords, selected_markets, results_limit):
     
     if not keyword_list:
         st.error("Please enter at least one keyword.")
-        return None
+        st.stop()
     
     # Use selected markets or all markets if none selected
     markets_to_search = selected_markets if selected_markets else list(AVAILABLE_MARKETS.keys())
@@ -152,118 +223,35 @@ def perform_search(sp, playlist_url, keywords, selected_markets, results_limit):
     # Ensure positions are integers where found
     df['position'] = df['position'].apply(lambda x: int(x) if pd.notnull(x) else x)
     
-    return df
-
-st.set_page_config(page_title="Playlist SEO Analysis - Top Songs Finder", page_icon="🎯", layout="wide")
-st.title("🎯 Playlist SEO Analysis")
-st.write("Analyze your playlist's search position across different markets and keywords!")
-
-# Initialize Spotify client
-sp = setup_spotify()
-
-# Get query parameters from URL
-playlists_param = st.query_params.get("playlists", "")
-keywords_param = st.query_params.get("keywords", "")
-markets_param = st.query_params.get("markets", "")
-
-# Parse markets from URL parameter if provided
-markets_from_url = []
-if markets_param:
-    markets_from_url = [m.strip() for m in markets_param.split(',') if m.strip() in AVAILABLE_MARKETS]
-
-# Sidebar for configuration
-st.sidebar.title("Settings")
-
-# Market selection
-selected_markets = st.sidebar.multiselect(
-    "Markets",
-    options=list(AVAILABLE_MARKETS.keys()),
-    default=markets_from_url,
-    format_func=lambda x: f"{x} - {AVAILABLE_MARKETS[x]}",
-    help="Select markets to search playlists in (leave empty to search all markets)"
-)
-
-# Results limit
-results_limit = st.sidebar.slider(
-    "Search depth per keyword",
-    min_value=50,
-    max_value=1000,
-    value=100,
-    step=50,
-    help="How deep to search in results (max 1000)"
-)
-
-# Create input fields
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    playlist_url = st.text_input(
-        "Enter Spotify playlist URLs/URIs (separate by comma):",
-        value=playlists_param,
-        placeholder="spotify:playlist:xxx, https://open.spotify.com/playlist/yyy"
-    )
-
-with col2:
-    keywords = st.text_input(
-        "Enter keywords to analyze (separate by comma):",
-        value=keywords_param,
-        placeholder="edm playlist, electronic music, dance hits"
-    )
-
-# Update URL parameters when input values change
-if playlist_url != playlists_param or keywords != keywords_param or ','.join(selected_markets) != markets_param:
-    # Only update if there are actual values to avoid cluttering the URL
-    query_params = {}
-    if playlist_url:
-        query_params["playlists"] = playlist_url
-    if keywords:
-        query_params["keywords"] = keywords
-    if selected_markets:
-        query_params["markets"] = ','.join(selected_markets)
+    # Display detailed results
+    st.subheader("Results")
     
-    # Update the URL parameters
-    st.query_params.update(query_params)
-
-# Add search button
-search_button = st.button("Analyze SEO Position", type="primary", use_container_width=True)
-
-# Check if we should automatically search (URL parameters provided) or button clicked
-should_search = search_button or (playlists_param and keywords_param)
-
-if should_search and playlist_url and keywords:
-    # Perform the search
-    df = perform_search(sp, playlist_url, keywords, selected_markets, results_limit)
+    # Prepare detailed results DataFrame
+    detailed_df = df[['playlist_name', 'keyword', 'market', 'position']].copy()
     
-    if df is not None:
-        # Display detailed results
-        st.subheader("Results")
-        
-        # Prepare detailed results DataFrame
-        detailed_df = df[['playlist_name', 'keyword', 'market', 'position']].copy()
-        
-        # Create a numeric position column for sorting
-        detailed_df['sort_position'] = detailed_df['position'].apply(lambda x: float('inf') if pd.isna(x) else x)
-        
-        # Convert position to string, handling NaN values
-        detailed_df['position'] = detailed_df['position'].apply(lambda x: str(int(x)) if pd.notnull(x) else 'Not found')
-        # Add full market names
-        detailed_df['market'] = detailed_df['market'].apply(lambda x: f"{x} - {AVAILABLE_MARKETS[x]}")
-        
-        # Sort by position (found positions first, then "Not found")
-        detailed_df = detailed_df.sort_values(['sort_position', 'playlist_name'])
-        
-        # Drop the sorting column and set final column names
-        detailed_df = detailed_df.drop('sort_position', axis=1)
-        detailed_df.columns = ['Playlist', 'Keyword', 'Market', 'Position']
-        
-        st.dataframe(
-            detailed_df,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Playlist": st.column_config.TextColumn(
-                    "Playlist",
-                    width="medium"
-                )
-            }
-        )
+    # Create a numeric position column for sorting
+    detailed_df['sort_position'] = detailed_df['position'].apply(lambda x: float('inf') if pd.isna(x) else x)
+    
+    # Convert position to string, handling NaN values
+    detailed_df['position'] = detailed_df['position'].apply(lambda x: str(int(x)) if pd.notnull(x) else 'Not found')
+    # Add full market names
+    detailed_df['market'] = detailed_df['market'].apply(lambda x: f"{x} - {AVAILABLE_MARKETS[x]}")
+    
+    # Sort by position (found positions first, then "Not found")
+    detailed_df = detailed_df.sort_values(['sort_position', 'playlist_name'])
+    
+    # Drop the sorting column and set final column names
+    detailed_df = detailed_df.drop('sort_position', axis=1)
+    detailed_df.columns = ['Playlist', 'Keyword', 'Market', 'Position']
+    
+    st.dataframe(
+        detailed_df,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Playlist": st.column_config.TextColumn(
+                "Playlist",
+                width="medium"
+            )
+        }
+    )
