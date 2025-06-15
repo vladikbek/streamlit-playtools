@@ -110,7 +110,7 @@ results_limit = st.sidebar.slider(
     "Search depth per keyword",
     min_value=50,
     max_value=1000,
-    value=200,
+    value=100,
     step=50,
     help="How deep to search in results (max 1000)"
 )
