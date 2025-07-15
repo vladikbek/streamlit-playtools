@@ -188,8 +188,15 @@ st.write("Analyze all tracks in a Spotify playlist!")
 # Initialize Spotify client
 sp = setup_spotify()
 
+# Sidebar settings
+st.sidebar.title("Settings")
+
 # Add checkbox for ISRC display
-show_isrc = st.checkbox("Show ISRC codes", value=False, help="Display International Standard Recording Code for each track")
+show_isrc = st.sidebar.checkbox(
+    "Show ISRC codes",
+    value=False,
+    help="Display International Standard Recording Code for each track"
+)
 
 # Get playlist ID from URL params
 playlist_id_param = st.query_params.get("playlist", "")
@@ -236,6 +243,15 @@ if playlist_to_process:
             
             # Convert to DataFrame
             df = pd.DataFrame(tracks)
+            
+            # Reorder columns to place ISRC after release_date if show_isrc is enabled
+            if show_isrc and 'isrc' in df.columns:
+                columns = list(df.columns)
+                columns.remove('isrc')
+                # Insert ISRC after release_date
+                release_date_idx = columns.index('release_date')
+                columns.insert(release_date_idx + 1, 'isrc')
+                df = df[columns]
             
             # Convert date columns to datetime with better error handling
             # Handle date_added column
@@ -320,8 +336,7 @@ if playlist_to_process:
             if show_isrc:
                 column_config["isrc"] = st.column_config.TextColumn(
                     "ISRC",
-                    help="International Standard Recording Code",
-                    width="small"
+                    help="International Standard Recording Code"
                 )
             
             # Display the tracks table with 1-based indexing
