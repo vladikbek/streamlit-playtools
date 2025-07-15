@@ -42,9 +42,9 @@ def extract_playlist_id(input_str: str) -> str:
     
     return ""
 
-def process_track_batch(args: Tuple[spotipy.Spotify, List[Dict], int]) -> Tuple[int, List[Dict]]:
+def process_track_batch(args: Tuple[spotipy.Spotify, List[Dict], int, bool]) -> Tuple[int, List[Dict]]:
     """Process a batch of tracks in parallel while preserving order"""
-    sp, tracks_batch, batch_index = args
+    sp, tracks_batch, batch_index, show_isrc = args
     processed_tracks = []
     
     # First get track IDs and artist IDs for batch lookups
@@ -136,11 +136,16 @@ def process_track_batch(args: Tuple[spotipy.Spotify, List[Dict], int]) -> Tuple[
             'url': f"spotify:track:{track['id']}",
             'stats': f"https://www.mystreamcount.com/track/{track['id']}"
         }
+        
+        # Add ISRC if requested
+        if show_isrc:
+            processed_track['isrc'] = track.get('external_ids', {}).get('isrc', 'N/A')
+        
         processed_tracks.append(processed_track)
     
     return batch_index, processed_tracks
 
-def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> List[Dict]:
+def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str, show_isrc: bool = False) -> List[Dict]:
     """Get all tracks from a playlist with parallel processing"""
     # First, get all tracks from the playlist
     results = sp.playlist_tracks(playlist_id)
@@ -160,7 +165,7 @@ def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> List[Dict]:
     # Process batches in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         # Create batch arguments with index for ordering
-        batch_args = [(sp, batch, i) for i, batch in enumerate(track_batches)]
+        batch_args = [(sp, batch, i, show_isrc) for i, batch in enumerate(track_batches)]
         futures = [executor.submit(process_track_batch, args) for args in batch_args]
         
         # Collect results and maintain order
@@ -182,6 +187,9 @@ st.write("Analyze all tracks in a Spotify playlist!")
 
 # Initialize Spotify client
 sp = setup_spotify()
+
+# Add checkbox for ISRC display
+show_isrc = st.checkbox("Show ISRC codes", value=False, help="Display International Standard Recording Code for each track")
 
 # Get playlist ID from URL params
 playlist_id_param = st.query_params.get("playlist", "")
@@ -220,7 +228,7 @@ if playlist_to_process:
         st.subheader(f"{playlist['name']} by {playlist['owner']['display_name']}")
         
         with st.spinner(f"Analyzing {playlist['tracks']['total']} tracks..."):
-            tracks = get_playlist_tracks(sp, playlist_id)
+            tracks = get_playlist_tracks(sp, playlist_id, show_isrc)
             
             if not tracks:
                 st.error("No tracks found in the playlist.")
@@ -307,6 +315,14 @@ if playlist_to_process:
                     width="small"
                 )
             }
+            
+            # Add ISRC column if requested
+            if show_isrc:
+                column_config["isrc"] = st.column_config.TextColumn(
+                    "ISRC",
+                    help="International Standard Recording Code",
+                    width="small"
+                )
             
             # Display the tracks table with 1-based indexing
             df.index = range(1, len(df) + 1)
