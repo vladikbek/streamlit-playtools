@@ -285,18 +285,15 @@ if playlist_to_process:
                 ),
                 "name": st.column_config.TextColumn(
                     "Track Name",
-                    help="Name of the track",
-                    width="medium"
+                    help="Name of the track"
                 ),
                 "artists": st.column_config.ListColumn(
                     "Artists",
-                    help="Artists who performed this track",
-                    width="medium"
+                    help="Artists who performed this track"
                 ),
                 "label": st.column_config.TextColumn(
                     "Label",
-                    help="Record label that released the track",
-                    width="medium"
+                    help="Record label that released the track"
                 ),
                 "genres": st.column_config.ListColumn(
                     "Genres",
