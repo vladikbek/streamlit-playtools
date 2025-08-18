@@ -1,16 +1,16 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="VBR Tools",
+    page_title="PlayTools",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="auto"
 )
 
-st.title("🎵 Welcome to VBR Tools")
+st.title("🎵 Welcome to PlayTools")
 
 st.markdown("""
-### VBR Tools helps you discover the most popular playlists and trending songs across Spotify.           
+### PlayTools helps you discover the most popular playlists and trending songs across Spotify.           
 """)
 
 # Add footer

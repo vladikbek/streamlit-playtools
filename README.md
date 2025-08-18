@@ -1,6 +1,6 @@
-# VBR Tools
+# PlayTools
 
-A Streamlit application that helps users discover and analyze music through various search options including tracks, playlists, and record labels.
+A Streamlit application that helps users discover and analyze music through various search options including tracks, playlists, and record labels using Spotify API.
 
 ## Features
 
@@ -13,22 +13,16 @@ A Streamlit application that helps users discover and analyze music through vari
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/vladikbek/vbrtools.git
+git clone https://github.com/vladikbek/playtools.git
 cd vbrtools
 ```
 
-2. Create and activate a virtual environment:
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-```
-
-3. Install the required dependencies:
+2. Install the required dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Create a `.env` file in the root directory and add your API credentials:
+3. Create a `.env` file in the root directory and add your API credentials:
 ```
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret
@@ -42,7 +36,3 @@ streamlit run Main_Page.py
 ```
 
 The application will open in your default web browser.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
