@@ -40,7 +40,12 @@ def parse_int_param(value: str | None, default: int, min_value: int, max_value: 
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
     load_dotenv()
-    auth_manager = SpotifyClientCredentials()
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    auth_manager = SpotifyClientCredentials(
+        client_id=client_id,
+        client_secret=client_secret
+    )
     return spotipy.Spotify(auth_manager=auth_manager)
 
 def search_playlists(sp: spotipy.Spotify, keyword: str, market: str, limit: int = 50) -> list:

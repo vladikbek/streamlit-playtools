@@ -13,7 +13,12 @@ from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS, MAX_RESULTS
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
     load_dotenv()
-    auth_manager = SpotifyClientCredentials()
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    auth_manager = SpotifyClientCredentials(
+        client_id=client_id,
+        client_secret=client_secret
+    )
     return spotipy.Spotify(auth_manager=auth_manager)
 
 def search_tracks_by_label(sp: spotipy.Spotify, label: str, market: str, limit: int = 50, current_year_only: bool = False) -> list:

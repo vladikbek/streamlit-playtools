@@ -16,7 +16,12 @@ st.write("Find the most viral tracks across Spotify's Viral 50 playlists worldwi
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
     load_dotenv()
-    auth_manager = SpotifyClientCredentials()
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    auth_manager = SpotifyClientCredentials(
+        client_id=client_id,
+        client_secret=client_secret
+    )
     return spotipy.Spotify(auth_manager=auth_manager)
 
 def process_viral_playlist(args: Tuple[spotipy.Spotify, str, str]) -> Tuple[str, str, List[Dict]]:

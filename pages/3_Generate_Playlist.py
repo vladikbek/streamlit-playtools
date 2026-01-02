@@ -19,7 +19,12 @@ BATCH_SIZE = 20           # Spotify API allows up to 20 items in batch requests
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
     load_dotenv()
-    auth_manager = SpotifyClientCredentials()
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    auth_manager = SpotifyClientCredentials(
+        client_id=client_id,
+        client_secret=client_secret
+    )
     return spotipy.Spotify(auth_manager=auth_manager)
 
 def calculate_freshness(release_date: str) -> float:

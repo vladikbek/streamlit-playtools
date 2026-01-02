@@ -13,14 +13,23 @@ import streamlit as st
 import plotly.express as px
 import concurrent.futures
 from typing import List, Dict, Tuple
-from collections import Counter
 from app.config import BATCH_SIZE, MAX_WORKERS
-import time
+
+def get_query_param(name: str) -> str | None:
+    value = st.query_params.get(name)
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
 
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
     load_dotenv()
-    auth_manager = SpotifyClientCredentials()
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    auth_manager = SpotifyClientCredentials(
+        client_id=client_id,
+        client_secret=client_secret
+    )
     return spotipy.Spotify(auth_manager=auth_manager)
 
 def extract_playlist_id(input_str: str) -> str:
@@ -42,9 +51,9 @@ def extract_playlist_id(input_str: str) -> str:
     
     return ""
 
-def process_track_batch(args: Tuple[spotipy.Spotify, List[Dict], int, bool]) -> Tuple[int, List[Dict]]:
+def process_track_batch(args: Tuple[spotipy.Spotify, List[Dict], int]) -> Tuple[int, List[Dict]]:
     """Process a batch of tracks in parallel while preserving order"""
-    sp, tracks_batch, batch_index, show_isrc = args
+    sp, tracks_batch, batch_index = args
     processed_tracks = []
     
     # First get track IDs and artist IDs for batch lookups
@@ -133,19 +142,15 @@ def process_track_batch(args: Tuple[spotipy.Spotify, List[Dict], int, bool]) -> 
             'popularity': track['popularity'],
             'date_added': track_item['added_at'],
             'release_date': track['album']['release_date'],
+            'isrc': track.get('external_ids', {}).get('isrc', 'N/A'),
             'url': f"spotify:track:{track['id']}",
             'stats': f"https://www.mystreamcount.com/track/{track['id']}"
         }
-        
-        # Add ISRC if requested
-        if show_isrc:
-            processed_track['isrc'] = track.get('external_ids', {}).get('isrc', 'N/A')
-        
         processed_tracks.append(processed_track)
     
     return batch_index, processed_tracks
 
-def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str, show_isrc: bool = False) -> List[Dict]:
+def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> List[Dict]:
     """Get all tracks from a playlist with parallel processing"""
     # First, get all tracks from the playlist
     results = sp.playlist_tracks(playlist_id)
@@ -165,7 +170,7 @@ def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str, show_isrc: bool =
     # Process batches in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         # Create batch arguments with index for ordering
-        batch_args = [(sp, batch, i, show_isrc) for i, batch in enumerate(track_batches)]
+        batch_args = [(sp, batch, i) for i, batch in enumerate(track_batches)]
         futures = [executor.submit(process_track_batch, args) for args in batch_args]
         
         # Collect results and maintain order
@@ -182,41 +187,43 @@ def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str, show_isrc: bool =
     return processed_tracks
 
 st.title(":material/playlist_add_check: Check Playlist")
-st.write("Analyze all tracks in a Spotify playlist!")
+st.caption("Check a playlist, pull full track data, and list every track in one place.")
 
 # Initialize Spotify client
 sp = setup_spotify()
 
-# Sidebar settings
-st.sidebar.title("Settings")
+playlist_id_param = get_query_param("playlist") or ""
 
-# Add checkbox for ISRC display
-show_isrc = st.sidebar.checkbox(
-    "Show ISRC codes",
-    value=False,
-    help="Display International Standard Recording Code for each track"
+with st.container(border=True):
+    with st.form("playlist_check_form", border=False):
+        search_col1, search_col2 = st.columns([8, 3])
+
+        with search_col1:
+            playlist_input = st.text_input(
+                "Enter Spotify playlist URL, URI, or ID:",
+                value=playlist_id_param,
+                help="Example: https://open.spotify.com/playlist/xxxxx or spotify:playlist:xxxxx or just the playlist ID",
+                label_visibility="collapsed",
+                placeholder="Paste playlist link or ID",
+                icon=":material/link:"
+            )
+
+        with search_col2:
+            search_button = st.form_submit_button(
+                "Analyze",
+                type="primary",
+                icon=":material/search:",
+                width="stretch"
+            )
+
+playlist_to_process = playlist_input or playlist_id_param
+last_playlist_id = st.session_state.get("last_playlist_id")
+auto_check = bool(playlist_id_param)
+should_run = bool(playlist_to_process) and (
+    search_button or (auto_check and playlist_to_process != last_playlist_id)
 )
 
-# Get playlist ID from URL params
-playlist_id_param = st.query_params.get("playlist", "")
-
-# Create input field for playlist URL/URI with the same design as Search Tracks
-search_col1, search_col2 = st.columns([4, 1])  # Ratio 4:1 for input:button
-
-with search_col1:
-    playlist_input = st.text_input(
-        "Enter Spotify playlist URL, URI, or ID:",
-        value=playlist_id_param,  # Use the playlist ID from URL params
-        help="Example: https://open.spotify.com/playlist/xxxxx or spotify:playlist:xxxxx or just the playlist ID",
-        label_visibility="collapsed"
-    )
-
-with search_col2:
-    search_button = st.button("Analyze", type="primary", use_container_width=True)
-
-# Process playlist if ID is in URL params or input field
-playlist_to_process = playlist_input or playlist_id_param
-if playlist_to_process:
+if should_run:
     # Extract playlist ID from input
     playlist_id = extract_playlist_id(playlist_to_process)
     
@@ -224,17 +231,16 @@ if playlist_to_process:
         st.error("Invalid playlist URL, URI, or ID. Please enter a valid Spotify playlist identifier.")
         st.stop()
     
-    # Update URL params with playlist ID if it's not already set
-    if st.query_params.get("playlist") != playlist_id:
-        st.query_params["playlist"] = playlist_id
+    if search_button:
+        st.query_params.from_dict({"playlist": playlist_id})
     
     try:
         # Get playlist details
         playlist = sp.playlist(playlist_id, fields="name,owner,tracks(total)")
-        st.subheader(f"{playlist['name']} by {playlist['owner']['display_name']}")
-        
+        st.session_state["last_playlist_id"] = playlist_id
+
         with st.spinner(f"Analyzing {playlist['tracks']['total']} tracks..."):
-            tracks = get_playlist_tracks(sp, playlist_id, show_isrc)
+            tracks = get_playlist_tracks(sp, playlist_id)
             
             if not tracks:
                 st.error("No tracks found in the playlist.")
@@ -242,15 +248,6 @@ if playlist_to_process:
             
             # Convert to DataFrame
             df = pd.DataFrame(tracks)
-            
-            # Reorder columns to place ISRC after release_date if show_isrc is enabled
-            if show_isrc and 'isrc' in df.columns:
-                columns = list(df.columns)
-                columns.remove('isrc')
-                # Insert ISRC after release_date
-                release_date_idx = columns.index('release_date')
-                columns.insert(release_date_idx + 1, 'isrc')
-                df = df[columns]
             
             # Convert date columns to datetime with better error handling
             # Handle date_added column
@@ -275,125 +272,153 @@ if playlist_to_process:
 
             df['release_date'] = df['release_date'].apply(parse_release_date)
             
-            # Configure columns for display
-            column_config = {
-                "artwork_url": st.column_config.ImageColumn(
-                    "Artwork",
-                    width="small",
-                    help="Track's album artwork"
-                ),
-                "name": st.column_config.TextColumn(
-                    "Track Name",
-                    help="Name of the track"
-                ),
-                "artists": st.column_config.ListColumn(
-                    "Artists",
-                    help="Artists who performed this track"
-                ),
-                "label": st.column_config.TextColumn(
-                    "Label",
-                    help="Record label that released the track"
-                ),
-                "genres": st.column_config.ListColumn(
-                    "Genres",
-                    help="Artist genres",
-                    width="medium"
-                ),
-                "popularity": st.column_config.NumberColumn(
-                    "Popularity",
-                    help="Spotify's popularity score (0-100)",
-                    format="%d"
-                ),
-                "date_added": st.column_config.DatetimeColumn(
-                    "Date Added",
-                    help="When the track was added to the playlist",
-                    format="D MMM YYYY"
-                ),
-                "release_date": st.column_config.DateColumn(
-                    "Release Date",
-                    help="Track's release date",
-                    format="D MMM YYYY"
-                ),
-                "url": st.column_config.LinkColumn(
-                    "Play",
-                    display_text="▶️ Play",
-                    help="Click to open in Spotify desktop/mobile app",
-                    width="small"
-                ),
-                "stats": st.column_config.LinkColumn(
-                    "Stats",
-                    display_text="📊 Stats",
-                    help="Click to view track statistics",
-                    width="small"
-                )
+            st.session_state["playlist_results"] = {
+                "playlist_name": playlist['name'],
+                "playlist_owner": playlist['owner']['display_name'],
+                "df": df
             }
-            
-            # Add ISRC column if requested
-            if show_isrc:
-                column_config["isrc"] = st.column_config.TextColumn(
-                    "ISRC",
-                    help="International Standard Recording Code"
-                )
-            
-            # Display the tracks table with 1-based indexing
-            df.index = range(1, len(df) + 1)
-            st.dataframe(
-                df,
-                use_container_width=True,
-                column_config=column_config,
-                hide_index=False
-            )
-            
-            # Create analytics section
-            with st.expander("View Analytics", expanded=False):
 
-                # Average Popularity
-                avg_popularity = df['popularity'].mean()
-                st.metric("Average Popularity", f"{avg_popularity:.1f}")
-
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Top Labels pie chart
-                    label_counts = df['label'].value_counts().head(5)
-                    fig_labels = px.pie(
-                        values=label_counts.values,
-                        names=label_counts.index,
-                        title="Top 5 Record Labels"
-                    )
-                    fig_labels.update_traces(textposition='inside', textinfo='percent+label')
-                    st.plotly_chart(fig_labels, use_container_width=True)
-                
-                with col2:
-                    # Popularity Distribution
-                    fig_popularity = px.histogram(
-                        df,
-                        x="popularity",
-                        nbins=20,
-                        title="Popularity Distribution"
-                    )
-                    fig_popularity.update_layout(
-                        xaxis_title="Popularity Score",
-                        yaxis_title="Number of Tracks"
-                    )
-                    st.plotly_chart(fig_popularity, use_container_width=True)
-                
-                # Top Genres (flatten the genres list and count)
-                all_genres = [genre for genres in df['genres'] for genre in genres]
-                genre_counts = pd.Series(all_genres).value_counts().head(10)
-                
-                if not genre_counts.empty:
-                    fig_genres = px.bar(
-                        x=genre_counts.index,
-                        y=genre_counts.values,
-                        title="Top 10 Genres",
-                        labels={'x': 'Genre', 'y': 'Number of Tracks'}
-                    )
-                    fig_genres.update_layout(xaxis_tickangle=45)
-                    st.plotly_chart(fig_genres, use_container_width=True)
-                else:
-                    st.info("No genre information available for the tracks in this playlist.")
-                    
     except Exception as e:
         st.error(f"Error analyzing playlist: {str(e)}")
-        st.stop() 
+        st.stop()
+
+playlist_results = st.session_state.get("playlist_results")
+if playlist_results:
+    df = playlist_results["df"]
+    st.subheader(f"{playlist_results['playlist_name']} by {playlist_results['playlist_owner']}", anchor=False)
+
+    # Configure columns for display
+    column_config = {
+        "artwork_url": st.column_config.ImageColumn(
+            "Artwork",
+            width="small",
+            help="Track's album artwork"
+        ),
+        "name": st.column_config.TextColumn(
+            "Track Name",
+            help="Name of the track",
+            width="medium"
+        ),
+        "artists": st.column_config.ListColumn(
+            "Artists",
+            help="Artists who performed this track",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            help="Record label that released the track"
+        ),
+        "genres": st.column_config.ListColumn(
+            "Genres",
+            help="Artist genres",
+            width="medium"
+        ),
+        "popularity": st.column_config.NumberColumn(
+            "Popularity",
+            help="Spotify's popularity score (0-100)",
+            format="%d",
+            width="small"
+        ),
+        "date_added": st.column_config.DatetimeColumn(
+            "Date Added",
+            help="When the track was added to the playlist",
+            format="D MMM YYYY",
+            width="small"
+        ),
+        "release_date": st.column_config.DateColumn(
+            "Release Date",
+            help="Track's release date",
+            format="D MMM YYYY",
+            width="small"
+        ),
+        "url": st.column_config.LinkColumn(
+            "Link",
+            display_text=":material/open_in_new:",
+            help="Click to open in Spotify desktop/mobile app",
+            width="small"
+        ),
+        "stats": st.column_config.LinkColumn(
+            "Stats",
+            display_text="📊 Stats",
+            help="Click to view track statistics",
+            width="small"
+        ),
+        "isrc": st.column_config.TextColumn(
+            "ISRC",
+            help="International Standard Recording Code",
+            width="small"
+        )
+    }
+
+    # Display the tracks table with 1-based indexing
+    df.index = range(1, len(df) + 1)
+    st.dataframe(
+        df,
+        width="stretch",
+        height=500,
+        column_order=[
+            "url",
+            "artwork_url",
+            "name",
+            "artists",
+            "genres",
+            "label",
+            "popularity",
+            "date_added",
+            "release_date",
+            "isrc",
+            "stats"
+        ],
+        column_config=column_config,
+        hide_index=False
+    )
+
+    # Create analytics section
+    with st.expander("View Analytics", expanded=False):
+
+        # Average Popularity
+        avg_popularity = df['popularity'].mean()
+        st.metric("Average Popularity", f"{avg_popularity:.1f}")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Top Labels pie chart
+            label_counts = df['label'].value_counts().head(5)
+            fig_labels = px.pie(
+                values=label_counts.values,
+                names=label_counts.index,
+                title="Top 5 Record Labels"
+            )
+            fig_labels.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig_labels, width="stretch")
+
+        with col2:
+            # Popularity Distribution
+            fig_popularity = px.histogram(
+                df,
+                x="popularity",
+                nbins=20,
+                title="Popularity Distribution"
+            )
+            fig_popularity.update_layout(
+                xaxis_title="Popularity Score",
+                yaxis_title="Number of Tracks"
+            )
+            st.plotly_chart(fig_popularity, width="stretch")
+
+        # Top Genres (flatten the genres list and count)
+        all_genres = [genre for genres in df['genres'] for genre in genres]
+        genre_counts = pd.Series(all_genres).value_counts().head(10)
+
+        if not genre_counts.empty:
+            fig_genres = px.bar(
+                x=genre_counts.index,
+                y=genre_counts.values,
+                title="Top 10 Genres",
+                labels={'x': 'Genre', 'y': 'Number of Tracks'}
+            )
+            fig_genres.update_layout(xaxis_tickangle=45)
+            st.plotly_chart(fig_genres, width="stretch")
+        else:
+            st.info("No genre information available for the tracks in this playlist.")
