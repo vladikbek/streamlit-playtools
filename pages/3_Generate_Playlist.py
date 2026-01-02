@@ -737,7 +737,7 @@ with search_col1:
     keyword = st.text_input("Enter keywords to search for playlists (separate by comma):", "", label_visibility="collapsed")
 
 with search_col2:
-    search_button = st.button("Search", type="primary", use_container_width=True)
+    search_button = st.button("Search", type="primary", width="stretch")
 
 if search_button and keyword:
     # Split keywords and clean them
@@ -938,7 +938,7 @@ if search_button and keyword:
     
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         column_config=column_config,
         hide_index=False
     )
@@ -957,7 +957,7 @@ if search_button and keyword:
                 hover_data=["Track Name", "Artists"],
                 title="Popularity vs. Freshness"
             )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.plotly_chart(fig_scatter, width="stretch")
         
         with col2:
             all_artists = [artist for artists_list in df['Artists'] for artist in artists_list]
@@ -969,7 +969,7 @@ if search_button and keyword:
                 title="Top 10 Artists",
                 labels={'x': 'Artist', 'y': 'Number of Tracks'}
             )
-            st.plotly_chart(fig_artists, use_container_width=True)
+            st.plotly_chart(fig_artists, width="stretch")
 
         # Add record label pie chart if label information is enabled
         if show_label_info:
@@ -988,7 +988,7 @@ if search_button and keyword:
             fig_labels.update_layout(showlegend=True)
             
             # Display the chart in full width
-            st.plotly_chart(fig_labels, use_container_width=True, theme="streamlit")
+            st.plotly_chart(fig_labels, width="stretch", theme="streamlit")
 
         # Add playlist metrics table
         st.subheader("Playlist Metrics")
@@ -1063,7 +1063,7 @@ if search_button and keyword:
         # Display the playlist metrics table
         st.dataframe(
             playlist_df,
-            use_container_width=True,
+            width="stretch",
             column_config=playlist_column_config,
             hide_index=True
         )

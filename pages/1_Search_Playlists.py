@@ -368,7 +368,7 @@ if search_results:
     df = pd.DataFrame([{
         'cover_url': p['images'][0]['url'] if p.get('images') and len(p['images']) > 0 else '',
         'Name': p['name'],
-        'Owner': p['owner']['display_name'],
+        'Owner': f"https://open.spotify.com/user/{p['owner']['id']}#name={p['owner']['display_name']}",
         'Tracks': p['total_tracks'],
         'Followers': p['followers'],
         'Markets': ', '.join(sorted(playlist_market_positions[p['id']]['markets'])),
@@ -410,9 +410,10 @@ if search_results:
             "Description",
             width="medium"
         ),
-        "Owner": st.column_config.TextColumn(
+        "Owner": st.column_config.LinkColumn(
             "Owner",
-            width="medium"
+            help="Playlist owner on Spotify",
+            display_text=r"#name=(.*)$"
         ),
         "Stats": st.column_config.LinkColumn(
             "Stats",

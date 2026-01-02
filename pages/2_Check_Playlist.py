@@ -186,7 +186,7 @@ def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> List[Dict]:
     
     return processed_tracks
 
-st.title(":material/playlist_add_check: Check Playlist")
+st.title(":material/playlist_add_check: Check Playlist", anchor=False)
 st.caption("Check a playlist, pull full track data, and list every track in one place.")
 
 # Initialize Spotify client
@@ -275,6 +275,8 @@ if should_run:
             st.session_state["playlist_results"] = {
                 "playlist_name": playlist['name'],
                 "playlist_owner": playlist['owner']['display_name'],
+                "playlist_id": playlist_id,
+                "playlist_owner_id": playlist['owner']['id'],
                 "df": df
             }
 
@@ -285,7 +287,18 @@ if should_run:
 playlist_results = st.session_state.get("playlist_results")
 if playlist_results:
     df = playlist_results["df"]
-    st.subheader(f"{playlist_results['playlist_name']} by {playlist_results['playlist_owner']}", anchor=False)
+    playlist_url = f"https://open.spotify.com/playlist/{playlist_results['playlist_id']}"
+    owner_url = f"https://open.spotify.com/user/{playlist_results['playlist_owner_id']}"
+    st.subheader(
+        f"[{playlist_results['playlist_name']}]({playlist_url}) by "
+        f"[{playlist_results['playlist_owner']}]({owner_url})",
+        anchor=False
+    )
+    primary_color = st.get_option("theme.primaryColor")
+
+    tracks_tab, labels_tab, popularity_tab, genres_tab = st.tabs(
+        ["Tracks", "Labels", "Popularity", "Genres"]
+    )
 
     # Configure columns for display
     column_config = {
@@ -322,14 +335,12 @@ if playlist_results:
         "date_added": st.column_config.DatetimeColumn(
             "Date Added",
             help="When the track was added to the playlist",
-            format="D MMM YYYY",
-            width="small"
+            format="D MMM YYYY"
         ),
         "release_date": st.column_config.DateColumn(
             "Release Date",
             help="Track's release date",
-            format="D MMM YYYY",
-            width="small"
+            format="D MMM YYYY"
         ),
         "url": st.column_config.LinkColumn(
             "Link",
@@ -339,75 +350,69 @@ if playlist_results:
         ),
         "stats": st.column_config.LinkColumn(
             "Stats",
-            display_text="📊 Stats",
+            display_text=":material/query_stats:",
             help="Click to view track statistics",
             width="small"
         ),
         "isrc": st.column_config.TextColumn(
             "ISRC",
-            help="International Standard Recording Code",
-            width="small"
+            help="International Standard Recording Code"
         )
     }
 
-    # Display the tracks table with 1-based indexing
-    df.index = range(1, len(df) + 1)
-    st.dataframe(
-        df,
-        width="stretch",
-        height=500,
-        column_order=[
-            "url",
-            "artwork_url",
-            "name",
-            "artists",
-            "genres",
-            "label",
-            "popularity",
-            "date_added",
-            "release_date",
-            "isrc",
-            "stats"
-        ],
-        column_config=column_config,
-        hide_index=False
-    )
+    with tracks_tab:
+        # Display the tracks table with 1-based indexing
+        df.index = range(1, len(df) + 1)
+        st.dataframe(
+            df,
+            width="stretch",
+            height=500,
+            column_order=[
+                "url",
+                "artwork_url",
+                "name",
+                "artists",
+                "label",
+                "popularity",
+                "date_added",
+                "release_date",
+                "isrc",
+                "genres",
+                "stats"
+            ],
+            column_config=column_config,
+            hide_index=False
+        )
 
-    # Create analytics section
-    with st.expander("View Analytics", expanded=False):
+    with labels_tab:
+        label_counts = df['label'].value_counts().head(5)
+        fig_labels = px.pie(
+            values=label_counts.values,
+            names=label_counts.index,
+            title="Top 5 Record Labels"
+        )
+        fig_labels.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_labels, width="stretch")
 
-        # Average Popularity
+    with popularity_tab:
         avg_popularity = df['popularity'].mean()
         st.metric("Average Popularity", f"{avg_popularity:.1f}")
 
-        col1, col2 = st.columns(2)
+        fig_popularity = px.histogram(
+            df,
+            x="popularity",
+            nbins=20,
+            title="Popularity Distribution"
+        )
+        if primary_color:
+            fig_popularity.update_traces(marker_color=primary_color)
+        fig_popularity.update_layout(
+            xaxis_title="Popularity Score",
+            yaxis_title="Number of Tracks"
+        )
+        st.plotly_chart(fig_popularity, width="stretch")
 
-        with col1:
-            # Top Labels pie chart
-            label_counts = df['label'].value_counts().head(5)
-            fig_labels = px.pie(
-                values=label_counts.values,
-                names=label_counts.index,
-                title="Top 5 Record Labels"
-            )
-            fig_labels.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_labels, width="stretch")
-
-        with col2:
-            # Popularity Distribution
-            fig_popularity = px.histogram(
-                df,
-                x="popularity",
-                nbins=20,
-                title="Popularity Distribution"
-            )
-            fig_popularity.update_layout(
-                xaxis_title="Popularity Score",
-                yaxis_title="Number of Tracks"
-            )
-            st.plotly_chart(fig_popularity, width="stretch")
-
-        # Top Genres (flatten the genres list and count)
+    with genres_tab:
         all_genres = [genre for genres in df['genres'] for genre in genres]
         genre_counts = pd.Series(all_genres).value_counts().head(10)
 
@@ -418,6 +423,8 @@ if playlist_results:
                 title="Top 10 Genres",
                 labels={'x': 'Genre', 'y': 'Number of Tracks'}
             )
+            if primary_color:
+                fig_genres.update_traces(marker_color=primary_color)
             fig_genres.update_layout(xaxis_tickangle=45)
             st.plotly_chart(fig_genres, width="stretch")
         else:

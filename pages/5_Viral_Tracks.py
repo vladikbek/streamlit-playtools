@@ -10,8 +10,8 @@ import streamlit as st
 from app.config import VIRAL_PLAYLISTS, MAX_WORKERS, BATCH_SIZE
 import plotly.express as px
 
-st.title(":material/chart_data: Viral Tracks")
-st.write("Find the most viral tracks across Spotify's Viral 50 playlists worldwide!")
+st.title(":material/chart_data: Viral Tracks", anchor=False)
+st.caption("Find the most viral tracks across Spotify's Viral 50 playlists worldwide.")
 
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
@@ -106,34 +106,22 @@ def get_album_details_batch(sp: spotipy.Spotify, track_ids: List[str]) -> Dict[s
 # Initialize Spotify client
 sp = setup_spotify()
 
-# Sidebar settings
-st.sidebar.title("Settings")
+with st.container(border=True):
+    with st.form("viral_tracks_form", border=False):
+        search_button = st.form_submit_button(
+            "Search Viral Playlists",
+            type="primary",
+            icon=":material/search:",
+            width="stretch"
+        )
 
-# Add checkbox for including GLOBAL playlist
-include_global = st.sidebar.checkbox(
-    "Include GLOBAL",
-    value=False,
-    help="Include tracks from Global Viral 50 playlist in results"
-)
-
-# Add checkbox for label information
-show_label_info = st.sidebar.checkbox(
-    "Show Record Label",
-    value=False,
-    help="Display record label information for each track"
-)
-
-# Add minimum occurrences filter
-min_occurrences = st.sidebar.slider(
-    "Minimum Viral Playlists",
-    min_value=1,
-    max_value=10,
-    value=2,
-    help="Show tracks that appear in at least this many viral playlists"
-)
-
-# Add search button
-search_button = st.button("Search Viral Playlists", type="primary", use_container_width=True)
+    min_occurrences = st.slider(
+        "Minimum Viral Playlists",
+        min_value=1,
+        max_value=10,
+        value=2,
+        help="Show tracks that appear in at least this many viral playlists"
+    )
 
 if search_button:
     with st.spinner("Searching viral playlists worldwide..."):
@@ -141,9 +129,9 @@ if search_button:
         
         # Process playlists in parallel
         playlist_args = [
-            (sp, playlist_uri, country_code) 
-            for playlist_uri, country_code in VIRAL_PLAYLISTS 
-            if include_global or country_code != 'GLOBAL'
+            (sp, playlist_uri, country_code)
+            for playlist_uri, country_code in VIRAL_PLAYLISTS
+            if country_code != "GLOBAL"
         ]
         total_playlists = len(playlist_args)
         
@@ -182,7 +170,7 @@ if search_button:
         # Convert to DataFrame
         tracks_list = []
         for track_key, info in viral_data.items():
-            if info['count'] >= min_occurrences:
+            if info['track_info']:
                 track_data = info['track_info'].copy()
                 track_data.update({
                     'viral_count': info['count'],
@@ -201,12 +189,10 @@ if search_button:
             st.error("No tracks found after applying filters.")
             st.stop()
         
-        # Get label information if checkbox is checked
-        if show_label_info:
-            with st.spinner("Fetching label information..."):
-                track_ids = [url.split(':')[-1] for url in df['url']]
-                album_details = get_album_details_batch(sp, track_ids)
-                df['Label'] = df['url'].apply(lambda x: album_details.get(x.split(':')[-1], {}).get('label', 'Unknown'))
+        # Always fetch label information
+        track_ids = [url.split(':')[-1] for url in df['url']]
+        album_details = get_album_details_batch(sp, track_ids)
+        df['Label'] = df['url'].apply(lambda x: album_details.get(x.split(':')[-1], {}).get('label', 'Unknown'))
         
         # Sort by viral count
         df = df.sort_values('viral_count', ascending=False)
@@ -214,114 +200,125 @@ if search_button:
         # Add Stats URL
         df['Stats'] = df['url'].apply(lambda x: f"https://www.mystreamcount.com/track/{x.split(':')[-1]}")
         
-        # Reset index to start from 1
-        df.index = range(1, len(df) + 1)
-        
-        # Configure columns
-        column_config = {
-            "artwork_url": st.column_config.ImageColumn(
-                "Artwork",
-                width="small",
-                help="Track's album artwork"
-            ),
-            "name": st.column_config.TextColumn(
-                "Track Name",
-                help="Name of the track",
-                width="medium"
-            ),
-            "artist": st.column_config.ListColumn(
-                "Artists",
-                help="Track artists",
-                width="medium"
-            ),
-            "popularity": st.column_config.NumberColumn(
-                "Popularity",
-                help="Spotify's popularity score (0-100)",
-                width="small",
-                format="%d"
-            )
-        }
-        
-        if show_label_info:
-            column_config["Label"] = st.column_config.TextColumn(
-                "Label",
-                help="Record label that released the track",
-                width="medium"
-            )
-            
-        column_config.update({
-            "viral_count": st.column_config.NumberColumn(
-                "Viral Count",
-                help="Number of viral playlists the track appears in",
-                width="small"
-            ),
-            "viral_countries": st.column_config.ListColumn(
-                "Viral Countries",
-                help="Countries where the track appears in viral playlists",
-                width="medium"
-            ),
-            "release_date": st.column_config.DateColumn(
-                "Release Date",
-                help="Track's release date"
-            ),
-            "url": st.column_config.LinkColumn(
-                "Play",
-                display_text="▶️ Play",
-                help="Click to open in Spotify desktop/mobile app",
-                width="small"
-            ),
-            "Stats": st.column_config.LinkColumn(
-                "Stats",
-                display_text="📊 Stats",
-                help="Click to view track statistics",
-                width="small"
-            )
-        })
-        
-        # Display results
-        st.subheader(f"Found {len(df)} Viral Tracks")
-        
-        # Select and reorder columns
-        display_columns = ['artwork_url', 'name', 'artist', 'popularity']
-        if show_label_info:
-            display_columns.append('Label')
-        display_columns.extend(['viral_count', 'viral_countries', 'release_date', 'url', 'Stats'])
-        
+        st.session_state["viral_results"] = {"df": df}
+
+viral_results = st.session_state.get("viral_results")
+if viral_results:
+    df = viral_results["df"]
+    filtered_df = df[df['viral_count'] >= min_occurrences].copy()
+
+    if filtered_df.empty:
+        st.warning("No tracks found after applying the minimum viral playlists filter.")
+        st.stop()
+
+    st.subheader(f"Found {len(filtered_df)} viral tracks", anchor=False)
+    st.caption(f"Appearing in at least {min_occurrences} viral playlists")
+
+    primary_color = st.get_option("theme.primaryColor")
+    tracks_tab, artists_tab, labels_tab = st.tabs(["Tracks", "Artists", "Labels"])
+
+    # Configure columns
+    column_config = {
+        "url": st.column_config.LinkColumn(
+            "Link",
+            display_text=":material/open_in_new:",
+            help="Click to open in Spotify desktop/mobile app",
+            width="small"
+        ),
+        "artwork_url": st.column_config.ImageColumn(
+            "Artwork",
+            width="small",
+            help="Track's album artwork"
+        ),
+        "name": st.column_config.TextColumn(
+            "Track Name",
+            help="Name of the track",
+            width="medium"
+        ),
+        "artist": st.column_config.ListColumn(
+            "Artists",
+            help="Track artists",
+            width="medium"
+        ),
+        "Label": st.column_config.TextColumn(
+            "Label",
+            help="Record label that released the track",
+            width="medium"
+        ),
+        "popularity": st.column_config.NumberColumn(
+            "Popularity",
+            help="Spotify's popularity score (0-100)",
+            width="small",
+            format="%d"
+        ),
+        "viral_count": st.column_config.NumberColumn(
+            "Viral Count",
+            help="Number of viral playlists the track appears in",
+            width="small"
+        ),
+        "viral_countries": st.column_config.ListColumn(
+            "Countries",
+            help="Countries where the track appears in viral playlists",
+            width="large"
+        ),
+        "release_date": st.column_config.DateColumn(
+            "Release Date",
+            help="Track's release date"
+        ),
+        "Stats": st.column_config.LinkColumn(
+            "Stats",
+            display_text=":material/query_stats:",
+            help="Click to view track statistics",
+            width="small"
+        )
+    }
+
+    with tracks_tab:
+        display_df = filtered_df.copy()
+        display_df.index = range(1, len(display_df) + 1)
         st.dataframe(
-            df[display_columns],
-            use_container_width=True,
+            display_df,
+            width="stretch",
+            height=500,
+            column_order=[
+                "url",
+                "artwork_url",
+                "name",
+                "artist",
+                "Label",
+                "popularity",
+                "viral_count",
+                "viral_countries",
+                "release_date",
+                "Stats"
+            ],
             column_config=column_config,
             hide_index=False
         )
-        
-        # Create an expander for analytics
-        with st.expander("View Analytics", expanded=False):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Get top 10 artists
-                all_artists = [artist for artists_list in df['artist'] for artist in artists_list]
-                artist_counts = pd.Series(all_artists).value_counts().head(10)
-                
-                fig_artists = px.bar(
-                    x=artist_counts.index,
-                    y=artist_counts.values,
-                    title="Top 10 Artists",
-                    labels={'x': 'Artist', 'y': 'Number of Tracks'}
-                )
-                st.plotly_chart(fig_artists, use_container_width=True)
-            
-            with col2:
-                if show_label_info:
-                    # Get top 10 labels
-                    label_counts = df['Label'].value_counts().head(10)
-                    
-                    fig_labels = px.bar(
-                        x=label_counts.index,
-                        y=label_counts.values,
-                        title="Top 10 Record Labels",
-                        labels={'x': 'Label', 'y': 'Number of Tracks'}
-                    )
-                    st.plotly_chart(fig_labels, use_container_width=True)
-                else:
-                    st.info("Enable 'Show Record Label' in settings to view label analytics.") 
+
+    with artists_tab:
+        all_artists = [artist for artists_list in filtered_df['artist'] for artist in artists_list]
+        artist_counts = pd.Series(all_artists).value_counts().head(10)
+
+        fig_artists = px.bar(
+            x=artist_counts.index,
+            y=artist_counts.values,
+            title="Top 10 Artists",
+            labels={'x': 'Artist', 'y': 'Number of Tracks'}
+        )
+        if primary_color:
+            fig_artists.update_traces(marker_color=primary_color)
+        st.plotly_chart(fig_artists, width="stretch")
+
+    with labels_tab:
+        label_counts = filtered_df['Label'].value_counts().head(10)
+
+        fig_labels = px.bar(
+            x=label_counts.index,
+            y=label_counts.values,
+            title="Top 10 Record Labels",
+            labels={'x': 'Label', 'y': 'Number of Tracks'}
+        )
+        if primary_color:
+            fig_labels.update_traces(marker_color=primary_color)
+        st.plotly_chart(fig_labels, width="stretch")
