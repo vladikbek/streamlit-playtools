@@ -9,7 +9,7 @@ from datetime import datetime, date
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS, VIRAL_PLAYLISTS
+from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS, VIRAL_PLAYLISTS
 import time
 
 # Configuration variables
@@ -483,8 +483,7 @@ def get_album_details_batch(sp: spotipy.Spotify, track_ids: List[str]) -> Dict[s
     
     return album_details
 
-st.set_page_config(page_title="Search Tracks - Top Songs Finder", page_icon="🔍", layout="wide")
-st.title("🔍 Search Tracks")
+st.title(":material/playlist_add: Generate Playlist")
 st.write("Find the most popular tracks across user-created playlists!")
 
 # Initialize Spotify client

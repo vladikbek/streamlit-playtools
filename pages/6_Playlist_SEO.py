@@ -7,7 +7,7 @@ import streamlit as st
 import plotly.express as px
 import concurrent.futures
 from typing import List, Dict, Tuple
-from config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS
+from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS
 
 def setup_spotify():
     """Initialize Spotify client with credentials from .env file"""
@@ -76,8 +76,7 @@ def search_playlist_parallel(args: Tuple[spotipy.Spotify, str, str, str, int]) -
     sp, keyword, market, target_playlist_id, limit = args
     return search_playlists(sp, keyword, market, target_playlist_id, limit)
 
-st.set_page_config(page_title="Playlist SEO Analysis - Top Songs Finder", page_icon="🎯", layout="wide")
-st.title("🎯 Playlist SEO Analysis")
+st.title(":material/analytics: Playlist SEO")
 st.write("Analyze your playlist's search position across different markets and keywords!")
 
 # Initialize Spotify client

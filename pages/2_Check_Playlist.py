@@ -14,7 +14,7 @@ import plotly.express as px
 import concurrent.futures
 from typing import List, Dict, Tuple
 from collections import Counter
-from config import BATCH_SIZE, MAX_WORKERS
+from app.config import BATCH_SIZE, MAX_WORKERS
 import time
 
 def setup_spotify():
@@ -181,8 +181,7 @@ def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str, show_isrc: bool =
     
     return processed_tracks
 
-st.set_page_config(page_title="Check Playlist - Top Songs Finder", page_icon="📋", layout="wide")
-st.title("📋 Check Playlist")
+st.title(":material/playlist_add_check: Check Playlist")
 st.write("Analyze all tracks in a Spotify playlist!")
 
 # Initialize Spotify client
