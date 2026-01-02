@@ -7,11 +7,10 @@ from collections import defaultdict
 import concurrent.futures
 import pandas as pd
 import streamlit as st
-from config import VIRAL_PLAYLISTS, MAX_WORKERS, BATCH_SIZE
+from app.config import VIRAL_PLAYLISTS, MAX_WORKERS, BATCH_SIZE
 import plotly.express as px
 
-st.set_page_config(page_title="Search Viral - Top Songs Finder", page_icon="🌎", layout="wide")
-st.title("🌎 Search Viral")
+st.title(":material/chart_data: Viral Tracks")
 st.write("Find the most viral tracks across Spotify's Viral 50 playlists worldwide!")
 
 def setup_spotify():

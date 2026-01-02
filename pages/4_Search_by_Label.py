@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, date
 import concurrent.futures
-from config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS, MAX_RESULTS
+from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS, MAX_RESULTS
 
 # Configuration variables
 def setup_spotify():
@@ -145,8 +145,7 @@ def process_albums_batch(args):
     return processed_albums
 
 # Page configuration
-st.set_page_config(page_title="Search by Label - Top Songs Finder", page_icon="🏢", layout="wide")
-st.title("🏢 Search by Label")
+st.title(":material/library_music: Search by Label")
 st.write("Find tracks or albums by record label and see their popularity!")
 
 # Initialize Spotify client

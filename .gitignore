@@ -42,3 +42,4 @@ ENV/
 ehthumbs.db
 Thumbs.db 
 .cache
+PLAN.md

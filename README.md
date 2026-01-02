@@ -1,6 +1,6 @@
-# PlayTools
+# Playlist Tools
 
-A Streamlit application that helps users discover and analyze music through various search options including tracks, playlists, and record labels using Spotify API.
+Playlist Tools is a Streamlit application that helps users discover and analyze music through various search options including tracks, playlists, and record labels using Spotify API.
 
 ## Features
 

@@ -8,7 +8,7 @@ import plotly.express as px
 import concurrent.futures
 from typing import List, Dict, Tuple
 from collections import Counter
-from config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS
+from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS
 
 # Configuration variables
 def setup_spotify():
@@ -145,8 +145,7 @@ def process_playlist_details(args: Tuple[spotipy.Spotify, Dict]) -> Dict:
         st.warning(f"Failed to get details for playlist {playlist['name']}: {str(e)}")
         return None
 
-st.set_page_config(page_title="Search Playlists - Top Songs Finder", page_icon="📑", layout="wide")
-st.title("📑 Search Playlists")
+st.title(":material/search: Search Playlists")
 st.write("Find popular playlists across Spotify!")
 
 # Initialize Spotify client
