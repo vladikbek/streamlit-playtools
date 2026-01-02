@@ -354,9 +354,6 @@ if search_results:
     if hide_official_playlists:
         display_playlists = [p for p in unique_playlists if not is_official_playlist(p)]
 
-    # Display search summary with cross-market emphasis
-    if len(selected_markets) > 1:
-        st.info(f"Found {len(display_playlists)} playlists that appear in all {len(selected_markets)} selected markets.")
 
     if not display_playlists:
         st.warning("No playlists left after filtering. Turn off 'Hide official playlists' to see them.")
@@ -379,10 +376,10 @@ if search_results:
     } for p in display_playlists])
 
     # Display results
-    if len(selected_markets) > 1:
-        st.subheader(f"Top {len(df)} Cross-Market Playlists")
-    else:
-        st.subheader(f"Top {len(df)} Playlists")
+    markets_label = ", ".join(AVAILABLE_MARKETS[m] for m in selected_markets)
+    keywords_label = ", ".join(keywords)
+    st.subheader(f"Found {len(df)} playlists", anchor=False)
+    st.caption(f"{keywords_label} in {markets_label}")
 
     # Reset index to start from 1
     df.index = range(1, len(df) + 1)
@@ -437,7 +434,7 @@ if search_results:
             width="small"
         ),
         "Keyword": st.column_config.TextColumn(
-            "Keyword",
+            "Keywords",
             width="small"
         ),
         "Avg Position": st.column_config.NumberColumn(
