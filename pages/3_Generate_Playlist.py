@@ -324,34 +324,21 @@ def get_album_details_batch(sp: spotipy.Spotify, track_ids: List[str]) -> Dict[s
     
     return album_details
 
-def merge_track_versions(track_df: pd.DataFrame) -> pd.DataFrame:
-    merged_tracks = {}
-    has_label = 'label' in track_df.columns
+def select_top_album_versions(track_df: pd.DataFrame) -> pd.DataFrame:
+    grouped_df = track_df.copy()
+    grouped_df['version_group'] = grouped_df['album_id'].fillna('')
+    grouped_df['version_group'] = grouped_df['version_group'].where(
+        grouped_df['version_group'].astype(str).str.len() > 0,
+        grouped_df['song_key']
+    )
 
-    for _, row in track_df.iterrows():
-        song_key = row['song_key']
-        if song_key not in merged_tracks:
-            entry = row.to_dict()
-            entry['playlist_ids_filtered'] = set(row['playlist_ids_filtered'])
-            merged_tracks[song_key] = entry
-            continue
-
-        entry = merged_tracks[song_key]
-        entry['occurrence'] += row['occurrence']
-        entry['playlist_ids_filtered'].update(row['playlist_ids_filtered'])
-
-        if row['popularity'] > entry.get('popularity', 0):
-            entry['popularity'] = row['popularity']
-            entry['release_date'] = row['release_date']
-            entry['url'] = row['url']
-            entry['album_id'] = row['album_id']
-            entry['artwork_url'] = row['artwork_url']
-            entry['name'] = row['name']
-            entry['artist'] = row['artist']
-            if has_label:
-                entry['label'] = row.get('label', entry.get('label'))
-
-    return pd.DataFrame(list(merged_tracks.values()))
+    grouped_df = grouped_df.sort_values(
+        ['total_score', 'popularity', 'name', 'url'],
+        ascending=[False, False, True, True],
+        kind='mergesort'
+    )
+    grouped_df = grouped_df.drop_duplicates(subset=['version_group'], keep='first')
+    return grouped_df.drop(columns=['version_group'])
 
 st.title(":material/playlist_add: Generate Playlist", anchor=False)
 st.caption("Find the most popular tracks across user-created playlists.")
@@ -453,23 +440,31 @@ with st.sidebar.container(border=True):
         help="Playlists with more tracks than this will be filtered out"
     )
 
+    search_limit_max = int(st.session_state.get("generate_search_limit", 50))
+    search_limit_max = max(1, min(50, search_limit_max))
+    last_search_limit = st.session_state.get("generate_search_limit_max")
+    if "generate_final_playlists" not in st.session_state:
+        st.session_state.generate_final_playlists = search_limit_max
+    else:
+        if last_search_limit is not None and st.session_state.generate_final_playlists == last_search_limit:
+            st.session_state.generate_final_playlists = search_limit_max
+        st.session_state.generate_final_playlists = max(
+            1,
+            min(search_limit_max, st.session_state.generate_final_playlists)
+        )
+    st.session_state.generate_search_limit_max = search_limit_max
+
     final_playlists = st.slider(
         "Number of playlists to analyze",
-        min_value=5,
-        max_value=50,
-        value=25,
-        step=5,
-        help="Number of top playlists to analyze after filtering"
+        min_value=1,
+        max_value=search_limit_max,
+        value=st.session_state.generate_final_playlists,
+        step=1,
+        key="generate_final_playlists",
+        help="Number of top playlists to analyze per keyword and market after filtering"
     )
 
-    top_tracks_limit = st.slider(
-        "Number of top tracks to show",
-        min_value=10,
-        max_value=100,
-        value=100,
-        step=10,
-        help="Number of top tracks to display in results"
-    )
+    top_tracks_placeholder = st.empty()
 # Create input field for keyword
 with st.container(border=True):
     with st.form("generate_playlist_form", border=False):
@@ -493,7 +488,8 @@ with st.container(border=True):
                 step=1,
                 help="Maximum number of playlists to fetch per keyword and market",
                 label_visibility="collapsed",
-                icon=":material/post:"
+                icon=":material/post:",
+                key="generate_search_limit"
             )
 
         with search_col3:
@@ -649,29 +645,12 @@ if generate_results:
         st.warning("No tracks found after applying playlist filters.")
         st.stop()
 
-    if not unique_album_tracks:
-        track_df = merge_track_versions(track_df)
-
-    if track_df.empty:
-        st.warning("No tracks found after applying playlist filters.")
-        st.stop()
-
     if unique_album_tracks:
         track_df['song_occurrence'] = track_df.groupby('song_key')['occurrence'].transform('sum')
     else:
         track_df['song_occurrence'] = track_df['occurrence']
 
-    max_count = track_df['occurrence'].max() if len(track_df) > 0 else 0
-    track_df['appearance_score'] = track_df['occurrence'].apply(
-        lambda count: calculate_appearance_score(count, max_count)
-    )
-
     track_df['freshness'] = track_df['release_date'].apply(calculate_freshness)
-    track_df['total_score'] = (
-        track_df['popularity'] * weight_popularity +
-        track_df['freshness'] * weight_freshness +
-        track_df['appearance_score'] * weight_appearances
-    )
 
     filtered_df = track_df.copy()
     filtered_df = filtered_df[
@@ -692,10 +671,56 @@ if generate_results:
         st.warning("No tracks found after applying the filters.")
         st.stop()
 
+    max_count = filtered_df['occurrence'].max() if len(filtered_df) > 0 else 0
+    filtered_df['appearance_score'] = filtered_df['occurrence'].apply(
+        lambda count: calculate_appearance_score(count, max_count)
+    )
+
+    filtered_df['total_score'] = (
+        filtered_df['popularity'] * weight_popularity +
+        filtered_df['freshness'] * weight_freshness +
+        filtered_df['appearance_score'] * weight_appearances
+    )
+
     filtered_df = filtered_df.sort_values('total_score', ascending=False)
 
     if unique_album_tracks:
-        filtered_df = filtered_df.drop_duplicates(subset=['album_id'], keep='first')
+        filtered_df = select_top_album_versions(filtered_df)
+
+    if filtered_df.empty:
+        st.warning("No tracks found after applying the filters.")
+        st.stop()
+
+    total_tracks = len(filtered_df)
+    max_tracks = max(1, total_tracks)
+    min_tracks = 1
+    step_tracks = 10 if max_tracks >= 10 else 1
+    default_tracks = 100 if max_tracks >= 100 else max_tracks
+    current_tracks = st.session_state.get("generate_top_tracks_limit", default_tracks)
+    current_tracks = max(min_tracks, min(max_tracks, current_tracks))
+    st.session_state.generate_top_tracks_limit = current_tracks
+
+    if max_tracks > 1:
+        top_tracks_limit = top_tracks_placeholder.slider(
+            "Number of top tracks to show",
+            min_value=min_tracks,
+            max_value=max_tracks,
+            value=current_tracks,
+            step=step_tracks,
+            key="generate_top_tracks_limit",
+            help="Number of top tracks to display in results"
+        )
+    else:
+        top_tracks_limit = top_tracks_placeholder.number_input(
+            "Number of top tracks to show",
+            min_value=1,
+            max_value=1,
+            value=1,
+            step=1,
+            key="generate_top_tracks_limit_single",
+            help="Number of top tracks to display in results"
+        )
+        st.session_state.generate_top_tracks_limit = 1
 
     filtered_df = filtered_df.head(top_tracks_limit)
     filtered_df['playlists'] = filtered_df['playlist_ids_filtered'].apply(
@@ -936,3 +961,21 @@ if generate_results:
     with uris_tab:
         track_uris = '\n'.join(display_df['URL'].tolist())
         st.code(track_uris, language='markdown')
+else:
+    max_tracks = 100
+    min_tracks = 1
+    step_tracks = 10
+    default_tracks = 100
+    current_tracks = st.session_state.get("generate_top_tracks_limit", default_tracks)
+    current_tracks = max(min_tracks, min(max_tracks, current_tracks))
+    st.session_state.generate_top_tracks_limit = current_tracks
+
+    top_tracks_placeholder.slider(
+        "Number of top tracks to show",
+        min_value=min_tracks,
+        max_value=max_tracks,
+        value=current_tracks,
+        step=step_tracks,
+        key="generate_top_tracks_limit",
+        help="Number of top tracks to display in results"
+    )
