@@ -464,7 +464,6 @@ with st.sidebar.container(border=True):
         help="Number of top playlists to analyze per keyword and market after filtering"
     )
 
-    top_tracks_placeholder = st.empty()
 # Create input field for keyword
 with st.container(border=True):
     with st.form("generate_playlist_form", border=False):
@@ -645,11 +644,6 @@ if generate_results:
         st.warning("No tracks found after applying playlist filters.")
         st.stop()
 
-    if unique_album_tracks:
-        track_df['song_occurrence'] = track_df.groupby('song_key')['occurrence'].transform('sum')
-    else:
-        track_df['song_occurrence'] = track_df['occurrence']
-
     track_df['freshness'] = track_df['release_date'].apply(calculate_freshness)
 
     filtered_df = track_df.copy()
@@ -665,7 +659,13 @@ if generate_results:
         ]
 
     filtered_df = filtered_df[filtered_df['freshness'] >= min_freshness]
-    filtered_df = filtered_df[filtered_df['song_occurrence'] >= min_playlists]
+
+    if unique_album_tracks:
+        filtered_df['playlist_count'] = filtered_df.groupby('song_key')['occurrence'].transform('sum')
+    else:
+        filtered_df['playlist_count'] = filtered_df['occurrence']
+
+    filtered_df = filtered_df[filtered_df['playlist_count'] >= min_playlists]
 
     if filtered_df.empty:
         st.warning("No tracks found after applying the filters.")
@@ -691,38 +691,6 @@ if generate_results:
         st.warning("No tracks found after applying the filters.")
         st.stop()
 
-    total_tracks = len(filtered_df)
-    max_tracks = max(1, total_tracks)
-    min_tracks = 1
-    step_tracks = 10 if max_tracks >= 10 else 1
-    default_tracks = 100 if max_tracks >= 100 else max_tracks
-    current_tracks = st.session_state.get("generate_top_tracks_limit", default_tracks)
-    current_tracks = max(min_tracks, min(max_tracks, current_tracks))
-    st.session_state.generate_top_tracks_limit = current_tracks
-
-    if max_tracks > 1:
-        top_tracks_limit = top_tracks_placeholder.slider(
-            "Number of top tracks to show",
-            min_value=min_tracks,
-            max_value=max_tracks,
-            value=current_tracks,
-            step=step_tracks,
-            key="generate_top_tracks_limit",
-            help="Number of top tracks to display in results"
-        )
-    else:
-        top_tracks_limit = top_tracks_placeholder.number_input(
-            "Number of top tracks to show",
-            min_value=1,
-            max_value=1,
-            value=1,
-            step=1,
-            key="generate_top_tracks_limit_single",
-            help="Number of top tracks to display in results"
-        )
-        st.session_state.generate_top_tracks_limit = 1
-
-    filtered_df = filtered_df.head(top_tracks_limit)
     filtered_df['playlists'] = filtered_df['playlist_ids_filtered'].apply(
         lambda ids: [playlist_lookup[playlist_id]['name'] for playlist_id in ids if playlist_id in playlist_lookup]
     )
@@ -731,7 +699,7 @@ if generate_results:
     columns = ['artwork_url', 'name', 'artist', 'release_date']
     if show_label_info:
         columns.insert(3, 'label')
-    columns.extend(['total_score', 'popularity', 'freshness', 'occurrence', 'playlists', 'url'])
+    columns.extend(['total_score', 'popularity', 'freshness', 'playlist_count', 'playlists', 'url'])
 
     display_df = filtered_df[columns].copy()
     column_names = {
@@ -742,7 +710,7 @@ if generate_results:
         'total_score': 'Total Score',
         'popularity': 'Popularity',
         'freshness': 'Freshness',
-        'occurrence': 'Playlist #',
+        'playlist_count': 'Playlist #',
         'playlists': 'Playlists',
         'release_date': 'Release Date',
         'url': 'URL'
@@ -762,8 +730,8 @@ if generate_results:
     st.caption(f"{keywords_label} in {markets_label}")
 
     primary_color = st.get_option("theme.primaryColor")
-    tracks_tab, analytics_tab, playlists_tab, uris_tab = st.tabs(
-        ["Tracks", "Analytics", "Playlists", "Track URIs"]
+    tracks_tab, playlists_tab, analytics_tab, uris_tab = st.tabs(
+        ["Tracks", "Playlists", "Analytics", "Track URIs"]
     )
 
     display_df.index = range(1, len(display_df) + 1)
@@ -810,7 +778,7 @@ if generate_results:
         ),
         "Playlist #": st.column_config.NumberColumn(
             "Playlist #",
-            help="Number of regular playlists the track appears in. Click to sort.",
+            help="Number of playlists the track (or song, if versions removed) appears in. Click to sort.",
             format="%d",
             width="small"
         ),
@@ -900,37 +868,81 @@ if generate_results:
                 filtered_df['playlist_ids_filtered'].apply(lambda ids: playlist['id'] in ids)
             ]
 
+            owner = playlist.get('owner') or {}
+            owner_id = owner.get('id') or ''
+            owner_name = owner.get('display_name') or ''
+            images = playlist.get('images') or []
+            cover_url = images[0]['url'] if images else ''
+            total_tracks = (playlist.get('tracks') or {}).get('total')
+
             metrics = {
-                'Playlist Name': playlist['name'],
-                'Creator': playlist['owner']['display_name'],
-                'Market': playlist['source_market'],
-                'Keyword': playlist['source_keyword'],
+                'URL': f"spotify:playlist:{playlist['id']}",
+                'cover_url': cover_url,
+                'Name': playlist.get('name', ''),
+                'Description': playlist.get('description', ''),
+                'Owner': f"https://open.spotify.com/user/{owner_id}#name={owner_name}" if owner_id else owner_name,
+                'Tracks': total_tracks,
+                'Market': playlist.get('source_market', ''),
+                'Keyword': playlist.get('source_keyword', ''),
                 'Tracks Found': len(playlist_tracks),
                 'Total Score': playlist_tracks['total_score'].sum(),
                 'Avg Score': round(playlist_tracks['total_score'].mean(), 2) if len(playlist_tracks) > 0 else 0,
+                'Stats': f"https://www.isitagoodplaylist.com/playlist/{playlist['id']}",
+                'Check': f"/check_playlist?playlist={playlist['id']}"
             }
             playlist_metrics.append(metrics)
 
         playlist_df = pd.DataFrame(playlist_metrics)
+        if playlist_df.empty:
+            st.warning("No playlist metrics available.")
+            st.stop()
+
+        if 'Tracks' in playlist_df.columns and playlist_df['Tracks'].isna().all():
+            playlist_df = playlist_df.drop(columns=['Tracks'])
+        if 'Description' in playlist_df.columns and (playlist_df['Description'] == '').all():
+            playlist_df = playlist_df.drop(columns=['Description'])
+
+        playlist_df = playlist_df.sort_values('Total Score', ascending=False)
+        playlist_df.index = range(1, len(playlist_df) + 1)
+
         playlist_column_config = {
-            "Playlist Name": st.column_config.TextColumn(
-                "Playlist Name",
-                help="Name of the playlist",
+            "cover_url": st.column_config.ImageColumn(
+                "Cover",
+                help="Playlist cover image",
+                width="small"
+            ),
+            "URL": st.column_config.LinkColumn(
+                "Link",
+                display_text=":material/open_in_new:",
+                help="Click to open in Spotify desktop/mobile app",
+                width="small"
+            ),
+            "Name": st.column_config.TextColumn(
+                "Name",
                 width="medium"
             ),
-            "Creator": st.column_config.TextColumn(
-                "Creator",
-                help="Playlist creator",
+            "Description": st.column_config.TextColumn(
+                "Description",
                 width="medium"
             ),
-            "Market": st.column_config.TextColumn(
-                "Market",
-                help="Market where the playlist was found",
+            "Owner": st.column_config.LinkColumn(
+                "Owner",
+                help="Playlist owner on Spotify",
+                display_text=r"#name=(.*)$"
+            ),
+            "Tracks": st.column_config.NumberColumn(
+                "Tracks",
+                help="Number of tracks in the playlist",
+                format="%d",
                 width="small"
             ),
             "Keyword": st.column_config.TextColumn(
-                "Keyword",
-                help="Search keyword that found this playlist",
+                "Keywords",
+                width="small"
+            ),
+            "Market": st.column_config.TextColumn(
+                "Market",
+                help="Market where this playlist appears",
                 width="small"
             ),
             "Tracks Found": st.column_config.NumberColumn(
@@ -948,34 +960,46 @@ if generate_results:
                 help="Average score of tracks from this playlist",
                 format="%.2f"
             ),
+            "Stats": st.column_config.LinkColumn(
+                "Stats",
+                display_text=":material/query_stats:",
+                help="View detailed playlist statistics",
+                width="small"
+            ),
+            "Check": st.column_config.LinkColumn(
+                "Check",
+                display_text=":material/playlist_add_check:",
+                help="Analyze playlist tracks",
+                width="small"
+            )
         }
 
-        playlist_df = playlist_df.sort_values('Total Score', ascending=False)
+        column_order = [
+            "URL",
+            "cover_url",
+            "Name",
+            "Description",
+            "Owner",
+            "Tracks",
+            "Keyword",
+            "Market",
+            "Tracks Found",
+            "Total Score",
+            "Avg Score",
+            "Stats",
+            "Check"
+        ]
+        column_order = [col for col in column_order if col in playlist_df.columns]
+
         st.dataframe(
             playlist_df,
             width="stretch",
+            height=500,
+            column_order=column_order,
             column_config=playlist_column_config,
-            hide_index=True
+            hide_index=False
         )
 
     with uris_tab:
         track_uris = '\n'.join(display_df['URL'].tolist())
         st.code(track_uris, language='markdown')
-else:
-    max_tracks = 100
-    min_tracks = 1
-    step_tracks = 10
-    default_tracks = 100
-    current_tracks = st.session_state.get("generate_top_tracks_limit", default_tracks)
-    current_tracks = max(min_tracks, min(max_tracks, current_tracks))
-    st.session_state.generate_top_tracks_limit = current_tracks
-
-    top_tracks_placeholder.slider(
-        "Number of top tracks to show",
-        min_value=min_tracks,
-        max_value=max_tracks,
-        value=current_tracks,
-        step=step_tracks,
-        key="generate_top_tracks_limit",
-        help="Number of top tracks to display in results"
-    )
