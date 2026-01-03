@@ -34,8 +34,8 @@ AVAILABLE_MARKETS = {
 }
 
 # API configuration
-BATCH_SIZE = 20  # Spotify API batch size limit
-MAX_WORKERS = 10  # Maximum number of parallel workers
+BATCH_SIZE = 10  # Spotify API batch size limit
+MAX_WORKERS = 5  # Maximum number of parallel workers
 MAX_RESULTS = 1000  # Maximum number of results to return 
 
 # Viral playlists configuration

@@ -42,4 +42,5 @@ ENV/
 ehthumbs.db
 Thumbs.db 
 .cache
+REVIEW.md
 PLAN.md
