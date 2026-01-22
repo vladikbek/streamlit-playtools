@@ -2,5 +2,5 @@ spotipy
 python-dotenv
 tqdm
 pandas
-streamlit
+streamlit==1.52.2
 plotly
