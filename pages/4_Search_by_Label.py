@@ -382,7 +382,19 @@ if label_results:
         non_zero_popularity = df[df['popularity'] > 0]['popularity']
         avg_popularity = non_zero_popularity.mean() if not non_zero_popularity.empty else 0
         metric_label = "Average Release Popularity" if is_release_search else "Average Track Popularity"
-        st.metric(metric_label, f"{avg_popularity:.1f}")
+        unique_artist_count = artist_stats["artist"].nunique()
+        returning_artist_count = int((artist_stats["track_count"] >= 3).sum()) if not artist_stats.empty else 0
+        returning_artist_share = (
+            (returning_artist_count / unique_artist_count) * 100
+            if unique_artist_count
+            else 0
+        )
+
+        metric_col1, metric_col2 = st.columns(2)
+        with metric_col1:
+            st.metric("Returning Artists (3+)", f"{returning_artist_share:.1f}%")
+        with metric_col2:
+            st.metric(metric_label, f"{avg_popularity:.1f}")
 
         col1, col2 = st.columns(2)
 
