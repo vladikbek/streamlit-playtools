@@ -279,12 +279,10 @@ if label_results:
                 width="small"
             ),
             "release_date": st.column_config.DateColumn(
-                "Release Date",
-                width="small"
+                "Release Date"
             ),
             "upc": st.column_config.TextColumn(
-                "UPC",
-                width="medium"
+                "UPC"
             ),
         }
         column_order = [
@@ -325,12 +323,10 @@ if label_results:
                 width="small"
             ),
             "release_date": st.column_config.DateColumn(
-                "Release Date",
-                width="small"
+                "Release Date"
             ),
             "isrc": st.column_config.TextColumn(
-                "ISRC",
-                width="small"
+                "ISRC"
             ),
             "Stats": st.column_config.LinkColumn(
                 "Stats",
