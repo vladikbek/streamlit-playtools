@@ -7,7 +7,14 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import concurrent.futures
-from app.config import BATCH_SIZE, MAX_WORKERS, MAX_RESULTS
+from app.config import BATCH_SIZE, MAX_WORKERS
+from app.label_search import (
+    parse_release_date,
+    process_releases_batch,
+    process_tracks_batch,
+    search_releases_by_label,
+    search_tracks_by_label,
+)
 
 # Configuration variables
 def get_query_param(name: str) -> str | None:
@@ -27,86 +34,9 @@ def setup_spotify():
     )
     return spotipy.Spotify(auth_manager=auth_manager)
 
-def search_tracks_by_label(sp: spotipy.Spotify, label: str, limit: int = 50, year: int | None = None) -> list:
-    """Search for tracks by record label"""
-    tracks = []
-    offset = 0
-    
-    # Use exact match with quotes for more precise results
-    query = f'label:"{label}"'
-    if year:
-        query += f' year:{year}'
-    
-    while True:
-        results = sp.search(q=query, type='track', limit=limit, offset=offset)
-        if not results['tracks']['items']:
-            break
-            
-        tracks.extend(results['tracks']['items'])
-        offset += limit
-        
-        # Stop if we've reached the maximum number of tracks
-        if offset >= MAX_RESULTS:
-            break
-            
-    return tracks
-
-def process_tracks_batch(args):
-    """Process a batch of tracks"""
-    sp, tracks_batch = args
-    processed_tracks = []
-    
-    for track in tracks_batch:
-        try:
-            # Safely get artist names, skipping any None values
-            artists = []
-            for artist in track.get('artists', []):
-                if artist and isinstance(artist, dict) and artist.get('name'):
-                    artists.append(artist['name'])
-            
-            # Skip track if no valid artists found
-            if not artists:
-                continue
-            
-            # Get album images safely
-            images = track.get('album', {}).get('images', [])
-            artwork_url = images[-1]['url'] if images else ''
-            
-            # Get ISRC from external_ids
-            isrc = track.get('external_ids', {}).get('isrc', 'N/A')
-            
-            track_data = {
-                'artwork_url': artwork_url,
-                'name': track.get('name', 'Unknown Track'),
-                'artists': artists,
-                'isrc': isrc,
-                'popularity': track.get('popularity', 0),
-                'release_date': track.get('album', {}).get('release_date', ''),
-                'url': track.get('uri', '')
-            }
-            processed_tracks.append(track_data)
-        except Exception as e:
-            continue  # Skip tracks that cause errors
-            
-    return processed_tracks
-
-def parse_release_date(date_str):
-    if pd.isna(date_str):
-        return pd.NaT
-    try:
-        date_str = str(date_str)
-        if len(date_str) == 4:
-            return pd.to_datetime(f"{date_str}-01-01")
-        if len(date_str) == 7:
-            return pd.to_datetime(f"{date_str}-01")
-        return pd.to_datetime(date_str)
-    except Exception:
-        return pd.NaT
-
-
 # Page configuration
 st.title(":material/library_music: Search by Label", anchor=False)
-st.caption("Find tracks by record label and explore popularity, release dates, and ISRCs.")
+st.caption("Find tracks or releases by record label and explore popularity, release dates, and identifiers.")
 
 # Initialize Spotify client
 sp = setup_spotify()
@@ -115,6 +45,7 @@ current_year = datetime.now().year
 year_options = ["All years"] + [str(current_year)] + [str(current_year - i) for i in range(1, 6)]
 year_options = list(dict.fromkeys(year_options))
 param_label = get_query_param("keyword") or ""
+param_search_releases = get_query_param("mode") == "releases"
 
 with st.container(border=True):
     with st.form("label_search_form", border=False):
@@ -138,7 +69,9 @@ with st.container(border=True):
                 width="stretch"
             )
 
-        with st.container(horizontal=True, vertical_alignment="center"):
+        filter_col1, filter_col2 = st.columns([8, 3])
+
+        with filter_col1:
             selected_year = st.selectbox(
                 "Year",
                 options=year_options,
@@ -147,27 +80,56 @@ with st.container(border=True):
                 label_visibility="collapsed"
             )
 
-    with st.container(horizontal=True, vertical_alignment="center"):
-        min_release_date = st.date_input(
-            "Minimum Release Date",
-            value=None,
-            help="Filter tracks released after this date (leave empty for no filter)"
-        )
+        with filter_col2:
+            search_releases = st.checkbox(
+                "Search for Releases",
+                value=param_search_releases,
+                help="Search Spotify releases instead of tracks for this label.",
+                width="stretch"
+            )
 
-        min_popularity = st.slider(
-            "Minimum Popularity",
-            min_value=0,
-            max_value=100,
-            value=0,
-            help="Filter tracks by minimum popularity score"
-        )
+    if search_releases:
+        filter_col1, filter_col2 = st.columns(2)
 
-        isrc_filter = st.text_input(
-            "Filter by ISRC",
-            value="",
-            help="Enter one or more ISRCs (comma-separated). Will match any track containing the entered text.",
-            placeholder="ISRC contains..."
-        )
+        with filter_col1:
+            min_release_date = st.date_input(
+                "Minimum Release Date",
+                value=None,
+                help="Filter releases after this date (leave empty for no filter)"
+            )
+
+        with filter_col2:
+            min_popularity = st.slider(
+                "Minimum Popularity",
+                min_value=0,
+                max_value=100,
+                value=0,
+                help="Filter releases by minimum popularity score"
+            )
+
+        isrc_filter = ""
+    else:
+        with st.container(horizontal=True, vertical_alignment="center"):
+            min_release_date = st.date_input(
+                "Minimum Release Date",
+                value=None,
+                help="Filter tracks released after this date (leave empty for no filter)"
+            )
+
+            min_popularity = st.slider(
+                "Minimum Popularity",
+                min_value=0,
+                max_value=100,
+                value=0,
+                help="Filter tracks by minimum popularity score"
+            )
+
+            isrc_filter = st.text_input(
+                "Filter by ISRC",
+                value="",
+                help="Enter one or more ISRCs (comma-separated). Will match any track containing the entered text.",
+                placeholder="ISRC contains..."
+            )
 
 last_search_label = st.session_state.get("label_search_key")
 auto_search = bool(param_label)
@@ -177,20 +139,24 @@ should_run = bool(search_label) and (
 
 if should_run:
     search_year = None if selected_year == "All years" else int(selected_year)
+    search_target = "releases" if search_releases else "tracks"
 
-    with st.spinner(f"Searching tracks from {search_label}..."):
-        items = search_tracks_by_label(sp, search_label, year=search_year)
+    with st.spinner(f"Searching {search_target} from {search_label}..."):
+        if search_releases:
+            items = search_releases_by_label(sp, search_label, year=search_year)
+        else:
+            items = search_tracks_by_label(sp, search_label, year=search_year)
 
         if not items:
-            st.warning(f"No tracks found for label: {search_label}")
+            st.warning(f"No {search_target} found for label: {search_label}")
             st.stop()
 
-        # Process items in parallel
         batches = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
         processed_items = []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = [executor.submit(process_tracks_batch, (sp, batch)) for batch in batches]
+            processor = process_releases_batch if search_releases else process_tracks_batch
+            futures = [executor.submit(processor, (sp, batch)) for batch in batches]
 
             for future in concurrent.futures.as_completed(futures):
                 try:
@@ -201,36 +167,41 @@ if should_run:
                     continue
 
         if not processed_items:
-            st.warning(f"No tracks found matching the exact label: {search_label}")
+            st.warning(f"No {search_target} found matching the exact label: {search_label}")
             st.stop()
 
-        # Convert to DataFrame
         df = pd.DataFrame(processed_items)
+        if search_releases:
+            df = df.drop_duplicates(subset=["id"])
         df['release_date'] = df['release_date'].apply(parse_release_date)
-        df['Stats'] = df['url'].apply(lambda x: f"https://www.mystreamcount.com/track/{x.split(':')[-1]}")
+        if not search_releases:
+            df['Stats'] = df['url'].apply(lambda x: f"https://www.mystreamcount.com/track/{x.split(':')[-1]}")
 
-        # Sort by popularity
-        df = df.sort_values('popularity', ascending=False)
+        df = df.sort_values(['popularity', 'release_date'], ascending=[False, False])
 
         if df.empty:
-            st.error("No tracks found.")
+            st.error(f"No {search_target} found.")
             st.stop()
 
         st.session_state["label_results"] = {
             "df": df,
             "label": search_label,
-            "year": search_year
+            "year": search_year,
+            "search_mode": "releases" if search_releases else "tracks"
         }
         st.session_state["label_search_key"] = search_label
 
         if search_button:
             st.query_params.from_dict({
-                "keyword": search_label
+                "keyword": search_label,
+                "mode": "releases" if search_releases else "tracks"
             })
 
 label_results = st.session_state.get("label_results")
 if label_results:
     df = label_results["df"].copy()
+    search_mode = label_results.get("search_mode", "tracks")
+    is_release_search = search_mode == "releases"
 
     if min_popularity > 0:
         df = df[df['popularity'] >= min_popularity]
@@ -238,61 +209,134 @@ if label_results:
     if min_release_date:
         df = df[df['release_date'] >= pd.Timestamp(min_release_date)]
 
-    if isrc_filter:
+    if not is_release_search and isrc_filter:
         isrc_list = [isrc.strip().upper() for isrc in isrc_filter.split(',') if isrc.strip()]
         if isrc_list:
             isrc_mask = df['isrc'].str.contains('|'.join(isrc_list), case=False, na=False)
             df = df[isrc_mask]
 
     if df.empty:
-        st.warning("No tracks found after applying the filters.")
+        result_label = "releases" if is_release_search else "tracks"
+        st.warning(f"No {result_label} found after applying the filters.")
         st.stop()
 
     year_label = "All years" if label_results["year"] is None else str(label_results["year"])
-    st.subheader(f"Found {len(df)} tracks", anchor=False)
+    result_label = "releases" if is_release_search else "tracks"
+    st.subheader(f"Found {len(df)} {result_label}", anchor=False)
     st.caption(f"{label_results['label']} · {year_label}")
 
     primary_color = st.get_option("theme.primaryColor")
-    tracks_tab, analytics_tab, artists_tab = st.tabs(["Tracks", "Analytics", "Artists"])
+    result_tab_label = "Releases" if is_release_search else "Tracks"
+    tracks_tab, analytics_tab, artists_tab = st.tabs([result_tab_label, "Analytics", "Artists"])
 
-    column_config = {
-        "url": st.column_config.LinkColumn(
-            "Link",
-            display_text=":material/open_in_new:",
-            help="Click to open in Spotify desktop/mobile app",
-            width="small"
-        ),
-        "artwork_url": st.column_config.ImageColumn(
-            "Artwork",
-            width="small"
-        ),
-        "name": st.column_config.TextColumn(
-            "Track Name",
-            width="medium"
-        ),
-        "artists": st.column_config.ListColumn(
-            "Artists",
-            width="medium"
-        ),
-        "popularity": st.column_config.NumberColumn(
-            "Popularity",
-            format="%d",
-            width="small"
-        ),
-        "release_date": st.column_config.DateColumn(
-            "Release Date",
-            width="small"
-        ),
-        "isrc": st.column_config.TextColumn(
-            "ISRC",
-            width="small"
-        ),
-        "Stats": st.column_config.LinkColumn(
-            "Stats",
-            display_text=":material/query_stats:",
-            width="small"
-        )
-    }
+    if is_release_search:
+        column_config = {
+            "url": st.column_config.LinkColumn(
+                "Link",
+                display_text=":material/open_in_new:",
+                help="Click to open the release in Spotify desktop/mobile app",
+                width="small"
+            ),
+            "artwork_url": st.column_config.ImageColumn(
+                "Artwork",
+                width="small"
+            ),
+            "name": st.column_config.TextColumn(
+                "Release Name",
+                width="medium"
+            ),
+            "artists": st.column_config.ListColumn(
+                "Artists",
+                width="medium"
+            ),
+            "label": st.column_config.TextColumn(
+                "Label",
+                width="medium"
+            ),
+            "album_type": st.column_config.TextColumn(
+                "Type",
+                width="small"
+            ),
+            "total_tracks": st.column_config.NumberColumn(
+                "Tracks",
+                format="%d",
+                width="small"
+            ),
+            "popularity": st.column_config.NumberColumn(
+                "Popularity",
+                format="%d",
+                width="small"
+            ),
+            "release_date": st.column_config.DateColumn(
+                "Release Date",
+                width="small"
+            ),
+            "upc": st.column_config.TextColumn(
+                "UPC",
+                width="medium"
+            ),
+        }
+        column_order = [
+            "url",
+            "artwork_url",
+            "name",
+            "artists",
+            "label",
+            "album_type",
+            "total_tracks",
+            "popularity",
+            "release_date",
+            "upc",
+        ]
+    else:
+        column_config = {
+            "url": st.column_config.LinkColumn(
+                "Link",
+                display_text=":material/open_in_new:",
+                help="Click to open in Spotify desktop/mobile app",
+                width="small"
+            ),
+            "artwork_url": st.column_config.ImageColumn(
+                "Artwork",
+                width="small"
+            ),
+            "name": st.column_config.TextColumn(
+                "Track Name",
+                width="medium"
+            ),
+            "artists": st.column_config.ListColumn(
+                "Artists",
+                width="medium"
+            ),
+            "popularity": st.column_config.NumberColumn(
+                "Popularity",
+                format="%d",
+                width="small"
+            ),
+            "release_date": st.column_config.DateColumn(
+                "Release Date",
+                width="small"
+            ),
+            "isrc": st.column_config.TextColumn(
+                "ISRC",
+                width="small"
+            ),
+            "Stats": st.column_config.LinkColumn(
+                "Stats",
+                display_text=":material/query_stats:",
+                width="small"
+            )
+        }
+        column_order = [
+            "url",
+            "artwork_url",
+            "name",
+            "artists",
+            "popularity",
+            "release_date",
+            "isrc",
+            "Stats"
+        ]
 
     with tracks_tab:
         df.index = range(1, len(df) + 1)
@@ -300,16 +344,7 @@ if label_results:
             df,
             width="stretch",
             height=500,
-            column_order=[
-                "url",
-                "artwork_url",
-                "name",
-                "artists",
-                "popularity",
-                "release_date",
-                "isrc",
-                "Stats"
-            ],
+            column_order=column_order,
             column_config=column_config,
             hide_index=False
         )
@@ -335,7 +370,8 @@ if label_results:
     with analytics_tab:
         non_zero_popularity = df[df['popularity'] > 0]['popularity']
         avg_popularity = non_zero_popularity.mean() if not non_zero_popularity.empty else 0
-        st.metric("Average Track Popularity", f"{avg_popularity:.1f}")
+        metric_label = "Average Release Popularity" if is_release_search else "Average Track Popularity"
+        st.metric(metric_label, f"{avg_popularity:.1f}")
 
         col1, col2 = st.columns(2)
 
@@ -343,14 +379,14 @@ if label_results:
             fig_popularity = px.histogram(
                 df,
                 x="popularity",
-                title="Distribution of Track Popularity",
+                title=f"Distribution of {'Release' if is_release_search else 'Track'} Popularity",
                 nbins=10
             )
             if primary_color:
                 fig_popularity.update_traces(marker_color=primary_color)
             fig_popularity.update_layout(
                 xaxis_title="Popularity Score",
-                yaxis_title="Number of Tracks"
+                yaxis_title=f"Number of {'Releases' if is_release_search else 'Tracks'}"
             )
             st.plotly_chart(fig_popularity, width="stretch")
 
@@ -361,8 +397,8 @@ if label_results:
                     top_by_tracks,
                     x='artist',
                     y='track_count',
-                    title="Top 10 Artists by Number of Tracks",
-                    labels={'artist': 'Artist', 'track_count': 'Number of Tracks'}
+                    title=f"Top 10 Artists by Number of {'Releases' if is_release_search else 'Tracks'}",
+                    labels={'artist': 'Artist', 'track_count': f"Number of {'Releases' if is_release_search else 'Tracks'}"}
                 )
                 if primary_color:
                     fig_tracks.update_traces(marker_color=primary_color)
