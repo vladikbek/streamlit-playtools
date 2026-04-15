@@ -1,6 +1,6 @@
-spotipy
-python-dotenv
-tqdm
-pandas
-streamlit==1.52.2
-plotly
+spotipy==2.26.0
+python-dotenv==1.2.2
+tqdm==4.67.3
+pandas==2.3.3
+streamlit==1.56.0
+plotly==6.7.0

@@ -42,5 +42,7 @@ ENV/
 ehthumbs.db
 Thumbs.db 
 .cache
+.playwright-cli/
+.trash/
 REVIEW.md
 PLAN.md
