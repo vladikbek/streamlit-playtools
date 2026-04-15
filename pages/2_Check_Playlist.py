@@ -14,6 +14,7 @@ import plotly.express as px
 import concurrent.futures
 from typing import List, Dict, Tuple
 from app.config import BATCH_SIZE, MAX_WORKERS
+from app.widget_state import sync_widget_state
 
 def get_query_param(name: str) -> str | None:
     value = st.query_params.get(name)
@@ -193,19 +194,20 @@ st.caption("Check a playlist, pull full track data, and list every track in one 
 sp = setup_spotify()
 
 playlist_id_param = get_query_param("playlist") or ""
+sync_widget_state("playlist_check_input", playlist_id_param)
 
 with st.container(border=True):
     with st.form("playlist_check_form", border=False):
         search_col1, search_col2 = st.columns([8, 3])
 
         with search_col1:
-            playlist_input = st.text_input(
+            st.text_input(
                 "Enter Spotify playlist URL, URI, or ID:",
-                value=playlist_id_param,
                 help="Example: https://open.spotify.com/playlist/xxxxx or spotify:playlist:xxxxx or just the playlist ID",
                 label_visibility="collapsed",
                 placeholder="Paste playlist link or ID",
-                icon=":material/link:"
+                icon=":material/link:",
+                key="playlist_check_input"
             )
 
         with search_col2:
@@ -216,7 +218,7 @@ with st.container(border=True):
                 width="stretch"
             )
 
-playlist_to_process = playlist_input or playlist_id_param
+playlist_to_process = st.session_state["playlist_check_input"].strip()
 last_playlist_id = st.session_state.get("last_playlist_id")
 auto_check = bool(playlist_id_param)
 should_run = bool(playlist_to_process) and (

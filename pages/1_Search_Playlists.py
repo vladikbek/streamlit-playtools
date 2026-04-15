@@ -7,6 +7,7 @@ import streamlit as st
 import concurrent.futures
 from typing import List, Dict, Tuple
 from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS
+from app.widget_state import sync_widget_state
 
 # Configuration variables
 def get_query_param(name: str) -> str | None:
@@ -188,30 +189,35 @@ param_markets = parse_markets_param(get_query_param("countries"))
 param_limit = parse_int_param(get_query_param("limit"), 50, 50, 1000)
 param_hide_official = parse_bool_param(get_query_param("hide_official"))
 
+sync_widget_state("playlist_search_keyword", param_keyword)
+sync_widget_state("playlist_search_limit", param_limit)
+sync_widget_state("playlist_search_markets", param_markets or ['US'])
+sync_widget_state("playlist_search_hide_official", param_hide_official)
+
 # Create input field for keyword
 with st.container(border=True):
     with st.form("playlist_search_form", border=False):
         search_col1, search_col2, search_col3 = st.columns([8, 2, 3])
 
         with search_col1:
-            keyword = st.text_input(
+            st.text_input(
                 "Enter keywords to search for playlists (separate by comma):",
-                param_keyword,
                 label_visibility="collapsed",
                 placeholder="Paste keywords, split with commas (e.g. phonk, hard techno)",
-                icon=":material/link:"
+                icon=":material/link:",
+                key="playlist_search_keyword"
             )
 
         with search_col2:
-            results_limit = st.number_input(
+            st.number_input(
                 "Number of results",
                 min_value=50,
                 max_value=1000,
-                value=param_limit,
                 step=50,
                 help="Maximum number of playlists to fetch per keyword and market (uses pagination)",
                 icon=":material/post:",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                key="playlist_search_limit"
             )
 
         with search_col3:
@@ -222,31 +228,37 @@ with st.container(border=True):
                 width="stretch"
             )
         with st.container(horizontal=True, vertical_alignment="center"):
-            selected_markets = st.multiselect(
+            st.multiselect(
                 "Countries",
                 options=list(AVAILABLE_MARKETS.keys()),
-                default=param_markets or ['US'],
                 format_func=lambda x: f"{x} - {AVAILABLE_MARKETS[x]}",
                 help="Select markets to search playlists in",
                 label_visibility="collapsed",
-                placeholder="Select countries to search playlists in"
+                placeholder="Select countries to search playlists in",
+                key="playlist_search_markets"
             )
 
-            hide_official_playlists = st.checkbox(
+            st.checkbox(
                 "Hide official playlists",
-                value=param_hide_official,
-                help="Hide playlists owned by Spotify"
+                help="Hide playlists owned by Spotify",
+                key="playlist_search_hide_official"
             )
 
+keyword = st.session_state["playlist_search_keyword"].strip()
+results_limit = int(st.session_state["playlist_search_limit"])
+selected_markets = st.session_state["playlist_search_markets"]
+hide_official_playlists = st.session_state["playlist_search_hide_official"]
 
 # If no markets selected, default to US
 if not selected_markets:
     selected_markets = ['US']
+    st.session_state["playlist_search_markets"] = selected_markets
 
 current_search_key = {
-    "q": keyword.strip(),
+    "q": keyword,
     "countries": ",".join(selected_markets),
-    "limit": str(int(results_limit))
+    "limit": str(int(results_limit)),
+    "hide_official": "1" if hide_official_playlists else "0"
 }
 last_search_key = st.session_state.get("last_search_key")
 auto_search = bool(param_keyword)
@@ -294,7 +306,7 @@ if should_run_search:
 
     if search_button:
         st.query_params.from_dict({
-            "q": keyword.strip(),
+            "q": keyword,
             "countries": ",".join(selected_markets),
             "limit": str(int(results_limit)),
             "hide_official": "1" if hide_official_playlists else "0"

@@ -8,6 +8,7 @@ import plotly.express as px
 import concurrent.futures
 from typing import List, Dict, Tuple
 from app.config import AVAILABLE_MARKETS, BATCH_SIZE, MAX_WORKERS
+from app.widget_state import sync_widget_state
 from urllib.parse import quote
 
 def get_query_param(name: str) -> str | None:
@@ -114,37 +115,41 @@ sp = setup_spotify()
 playlists_param = get_query_param("playlists") or ""
 keywords_param = get_query_param("keywords") or ""
 
+sync_widget_state("playlist_seo_urls", playlists_param)
+sync_widget_state("playlist_seo_keywords", keywords_param)
+sync_widget_state("playlist_seo_depth", "100")
+
 with st.container(border=True):
     with st.form("playlist_seo_form", border=False):
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            playlist_url = st.text_area(
+            st.text_area(
                 "Enter Spotify playlist URLs/URIs:",
-                value=playlists_param,
                 placeholder="One per line or comma-separated",
                 label_visibility="collapsed",
-                height=120
+                height=120,
+                key="playlist_seo_urls"
             )
 
         with col2:
-            keywords = st.text_area(
+            st.text_area(
                 "Enter keywords to analyze:",
-                value=keywords_param,
                 placeholder="One per line or comma-separated",
                 label_visibility="collapsed",
-                height=120
+                height=120,
+                key="playlist_seo_keywords"
             )
 
         action_col1, action_col2 = st.columns([8, 3])
 
         with action_col1:
-            search_depth_input = st.text_input(
+            st.text_input(
                 "Search depth per keyword",
-                value="100",
                 help="How deep to search in results (50-1000)",
                 label_visibility="collapsed",
-                placeholder="Search depth per keyword (50-1000)"
+                placeholder="Search depth per keyword (50-1000)",
+                key="playlist_seo_depth"
             )
 
         with action_col2:
@@ -155,12 +160,16 @@ with st.container(border=True):
                 width="stretch"
             )
 
+playlist_url = st.session_state["playlist_seo_urls"].strip()
+keywords = st.session_state["playlist_seo_keywords"].strip()
+search_depth_input = st.session_state["playlist_seo_depth"].strip()
+
 last_search_key = st.session_state.get("seo_search_key")
 auto_search = bool(playlists_param or keywords_param)
 current_search_key = {
-    "playlists": playlist_url.strip(),
-    "keywords": keywords.strip(),
-    "depth": search_depth_input.strip()
+    "playlists": playlist_url,
+    "keywords": keywords,
+    "depth": search_depth_input
 }
 should_run = bool(playlist_url and keywords) and (
     search_button or (auto_search and current_search_key != last_search_key)
@@ -244,8 +253,8 @@ if should_run:
 
     if search_button:
         st.query_params.from_dict({
-            "playlists": playlist_url.strip(),
-            "keywords": keywords.strip()
+            "playlists": playlist_url,
+            "keywords": keywords
         })
 
 seo_results = st.session_state.get("seo_results")

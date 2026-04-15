@@ -15,6 +15,7 @@ from app.label_search import (
     search_releases_by_label,
     search_tracks_by_label,
 )
+from app.widget_state import sync_widget_state
 
 # Configuration variables
 def get_query_param(name: str) -> str | None:
@@ -47,18 +48,21 @@ year_options = list(dict.fromkeys(year_options))
 param_label = get_query_param("keyword") or ""
 param_search_releases = get_query_param("mode") == "releases"
 
+sync_widget_state("label_search_input", param_label)
+sync_widget_state("label_search_mode", param_search_releases)
+
 with st.container(border=True):
     with st.form("label_search_form", border=False):
         search_col1, search_col2 = st.columns([8, 3])
 
         with search_col1:
-            search_label = st.text_input(
+            st.text_input(
                 "Enter record label name:",
-                param_label,
                 help="Enter the exact name of the record label",
                 label_visibility="collapsed",
                 placeholder="Paste label name",
-                icon=":material/link:"
+                icon=":material/link:",
+                key="label_search_input"
             )
 
         with search_col2:
@@ -81,12 +85,15 @@ with st.container(border=True):
             )
 
         with filter_col2:
-            search_releases = st.checkbox(
+            st.checkbox(
                 "Search for Releases",
-                value=param_search_releases,
                 help="Search Spotify releases instead of tracks for this label.",
-                width="stretch"
+                width="stretch",
+                key="label_search_mode"
             )
+
+    search_label = st.session_state["label_search_input"].strip()
+    search_releases = st.session_state["label_search_mode"]
 
     if search_releases:
         filter_col1, filter_col2 = st.columns(2)
@@ -131,10 +138,14 @@ with st.container(border=True):
                 placeholder="ISRC contains..."
             )
 
+current_search_key = {
+    "keyword": search_label,
+    "mode": "releases" if search_releases else "tracks"
+}
 last_search_label = st.session_state.get("label_search_key")
 auto_search = bool(param_label)
 should_run = bool(search_label) and (
-    search_button or (auto_search and search_label != last_search_label)
+    search_button or (auto_search and current_search_key != last_search_label)
 )
 
 if should_run:
@@ -189,7 +200,7 @@ if should_run:
             "year": search_year,
             "search_mode": "releases" if search_releases else "tracks"
         }
-        st.session_state["label_search_key"] = search_label
+        st.session_state["label_search_key"] = current_search_key
 
         if search_button:
             st.query_params.from_dict({
